@@ -2291,7 +2291,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
     Widget? trailing,
     VoidCallback? onTap,
   }) {
-    return Container(
+    return Material(
       color: isDark ? const Color(0xFF1F2C34) : Colors.white,
       child: ListTile(
         title: Text(
@@ -2427,13 +2427,17 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
             label,
             style: TextStyle(
               fontSize: 14,
-              color: isDark ? Colors.white70 : Colors.black87,
+              fontWeight: FontWeight.w500,
+              color: isDark ? Colors.white : Colors.black87,
             ),
           ),
           Switch(
             value: value,
             onChanged: onChanged,
-            activeThumbColor: Colors.blue,
+            activeColor: Colors.white,
+            activeTrackColor: Colors.lightBlue,
+            inactiveThumbColor: isDark ? Colors.white70 : Colors.grey.shade400,
+            inactiveTrackColor: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
           ),
         ],
       ),

@@ -2712,9 +2712,10 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
         backgroundColor: backgroundColor,
         behavior: SnackBarBehavior.floating,
         margin: EdgeInsets.only(
-          bottom: MediaQuery.of(context).size.height * 0.45,
+          top: MediaQuery.of(context).padding.top + 12,
           left: 24,
           right: 24,
+          bottom: MediaQuery.of(context).size.height - MediaQuery.of(context).padding.top - 80,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

@@ -214,7 +214,7 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                           Icon(Icons.inventory_2_outlined, size: 80, color: isDark ? Colors.grey.shade700 : Colors.grey.shade400),
                           const SizedBox(height: 16),
                           Text(
-                            _searchQuery.isEmpty ? 'Tidak ada chat yang diarsipkan' : 'Tidak ada hasil pencarian',
+                            _searchQuery.isEmpty ? 'No archived chats' : 'No search results',
                             style: TextStyle(color: isDark ? Colors.grey.shade500 : Colors.grey.shade600, fontSize: 16),
                           ),
                         ],
@@ -308,13 +308,13 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
         case '2':
         case 'audio':
         case 'voice note':
-          mappedType = 'Pesan Suara';
+          mappedType = 'Voice Message';
           icon = '🎤 ';
           break;
         case '3':
         case 'image':
         case 'photo':
-          mappedType = 'Foto';
+          mappedType = 'Photo';
           icon = '📷 ';
           break;
         case '4':
@@ -325,19 +325,19 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
         case '5':
         case 'document':
         case 'file':
-          mappedType = 'Dokumen';
+          mappedType = 'Document';
           icon = '📄 ';
           break;
         case '10':
         case '14':
         case 'contact':
-          mappedType = 'Kontak';
+          mappedType = 'Contact';
           icon = '👤 ';
           break;
         case '11':
         case '15':
         case 'location':
-          mappedType = 'Lokasi';
+          mappedType = 'Location';
           icon = '📍 ';
           break;
         case '16':
@@ -361,13 +361,13 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
     if (displayMessage.startsWith('{') && displayMessage.contains('"Filename"')) {
       final lower = displayMessage.toLowerCase();
       if (lower.contains('"ptt":true') || lower.contains('"ptt": true') || lower.contains('.ogg') || lower.contains('.mp3') || lower.contains('voice note') || lower.contains('pesan suara') || lower.contains('voice_')) {
-        displayMessage = '🎤 Pesan Suara';
+        displayMessage = '🎤 Voice Message';
       } else if (lower.contains('.jpg') || lower.contains('.png') || lower.contains('.jpeg') || lower.contains('photo') || lower.contains('foto')) {
-        displayMessage = '📷 Foto';
+        displayMessage = '📷 Photo';
       } else if (lower.contains('.mp4') || lower.contains('video')) {
         displayMessage = '🎬 Video';
       } else {
-        displayMessage = '📎 Lampiran';
+        displayMessage = '📎 Attachment';
       }
     }
 
@@ -386,24 +386,24 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
         }
       } else if (['.jpg', '.jpeg', '.png', '.gif', '.bmp'].any((ext) => lower.endsWith(ext)) || 
           lower.startsWith('img-') || lower.startsWith('img_') || lower.startsWith('photo')) {
-        displayMessage = '📷 Foto';
+        displayMessage = '📷 Photo';
       } else if (['.mp4', '.avi', '.mov', '.3gp', '.mkv'].any((ext) => lower.endsWith(ext)) || 
                  lower.startsWith('vid-') || lower.startsWith('vid_')) {
         displayMessage = '🎬 Video';
       } else if (['.ogg', '.opus', '.mp3', '.wav', '.m4a', '.aac', '.amr', '.weba'].any((ext) => lower.endsWith(ext)) || 
                  lower.startsWith('voice_') || lower.startsWith('ptt-') || lower.startsWith('aud-')) {
-        displayMessage = '🎤 Pesan Suara';
+        displayMessage = '🎤 Voice Message';
       } else if (['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.csv', '.zip', '.rar'].any((ext) => lower.endsWith(ext))) {
-        displayMessage = '📄 Dokumen';
+        displayMessage = '📄 Document';
       } else if (RegExp(r'\.[a-zA-Z0-9]{2,5}$').hasMatch(lower) && !lower.contains(' ') && lower.length < 100) {
-        displayMessage = '📎 Lampiran';
+        displayMessage = '📎 Attachment';
       }
     } else if (isDocumentAlready || displayMessage.startsWith('📎')) {
        final lower = displayMessage.toLowerCase().trim();
        if (isDocumentAlready && (lower.contains('img-') || lower.contains('vid-') || lower.contains('wa00'))) {
-         displayMessage = '📄 Dokumen';
+         displayMessage = '📄 Document';
        } else if (displayMessage.startsWith('📎') && (lower.contains('img-') || lower.contains('img_'))) {
-         displayMessage = '📷 Foto';
+         displayMessage = '📷 Photo';
        }
     }
 

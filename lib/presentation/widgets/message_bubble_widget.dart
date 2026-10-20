@@ -1386,7 +1386,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Lokasi',
+                      'Location',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
                         color: isMe
@@ -1452,7 +1452,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: const Text(
-                            'Ketuk untuk buka di Maps',
+                            'Tap to open in Maps',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 10,
@@ -1500,7 +1500,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        'Buka di Google Maps',
+                        'Open in Google Maps',
                         style: TextStyle(
                           fontSize: 14,
                           color: isMe ? Colors.white : AppTheme.primaryColor,

@@ -5474,7 +5474,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             showDialog(
               context: context,
               builder: (ctx) => AlertDialog(
-                title: const Text('Hapus Pesan'),
+                title: const Text('Delete Message'),
                 content: Text(
                   'Hapus ${_selectedMessageKeys.length} pesan yang dipilih untuk semua orang?',
                 ),
@@ -6047,7 +6047,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       final msgDay = DateTime(date.year, date.month, date.day);
       final diff = today.difference(msgDay).inDays;
       if (diff == 0) {
-        label = 'Hari Ini';
+        label = 'Today';
       } else if (diff == 1) {
         label = 'Kemarin';
       } else {
@@ -6286,7 +6286,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                   starred ? Icons.star : Icons.star_border,
                   color: Colors.amber,
                 ),
-                title: Text(starred ? 'Hapus Bintang' : 'Tandai Bintang'),
+                title: Text(starred ? 'Unstar' : 'Star'),
                 onTap: () {
                   Navigator.pop(ctx);
                   chatProvider.toggleStar(

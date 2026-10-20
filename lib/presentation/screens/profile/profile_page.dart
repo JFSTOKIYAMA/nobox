@@ -400,51 +400,51 @@ class _ProfileMenuListState extends State<_ProfileMenuList> {
         _buildMenuSection(
           context,
           0,
-          title: 'Tentang NoBox.AI',
+          title: 'About NoBox.AI',
           content:
-              'NoBox.AI adalah platform berbasis kecerdasan buatan yang dirancang untuk mengintegrasikan layanan komunikasi, pemasaran, dan customer service dalam satu sistem terpusat. Platform ini membantu bisnis mengelola interaksi pelanggan secara otomatis, terstruktur, dan efisien.\n\nNoBox.AI mendukung berbagai kanal komunikasi, seperti WhatsApp, Telegram, website, media sosial, dan marketplace, sehingga seluruh pesan pelanggan dapat dikelola dalam satu dashboard. Dengan teknologi AI yang human-like, sistem mampu memberikan respon yang cepat, relevan, dan konsisten.\n\nSelain itu, NoBox.AI dilengkapi dengan fitur Automasi, AI Agent, Human Agent, serta sistem monitoring dan pelaporan. Fitur-fitur ini memungkinkan perusahaan memantau kinerja layanan, mengelola tim, dan menganalisis data interaksi pelanggan secara menyeluruh.',
+              'NoBox.AI is an AI-powered platform designed to integrate communication, marketing, and customer service into a single centralized system. It helps businesses manage customer interactions automatically, structurally, and efficiently.\n\nNoBox.AI supports multiple communication channels such as WhatsApp, Telegram, website, social media, and marketplaces, allowing all customer messages to be managed in one dashboard. With human-like AI technology, the system delivers fast, relevant, and consistent responses.\n\nAdditionally, NoBox.AI includes Automation, AI Agent, Human Agent, monitoring, and reporting features. These enable companies to monitor service performance, manage teams, and analyze customer interaction data comprehensively.',
         ),
         _buildMenuSection(
           context,
           1,
-          title: 'Mengapa NoBox.AI?',
+          title: 'Why NoBox.AI?',
           content:
-              'NoBox.AI membantu bisnis meningkatkan kualitas layanan pelanggan tanpa harus menambah beban kerja secara manual. Dengan sistem otomatis, perusahaan dapat merespons pelanggan lebih cepat dan lebih akurat.',
+              'NoBox.AI helps businesses improve customer service quality without increasing manual workload. With automation, companies can respond to customers faster and more accurately.',
         ),
         _buildMenuSection(
           context,
           2,
-          title: 'Keunggulan Utama',
+          title: 'Key Advantages',
           content:
-              '• Menghemat waktu dan biaya operasional melalui automasi layanan.\n• Meningkatkan kepuasan pelanggan dengan respon yang cepat dan konsisten.\n• Memudahkan pengelolaan komunikasi dari berbagai platform dalam satu sistem.\n• Mendukung pengambilan keputusan berbasis data melalui fitur laporan dan monitoring.\n• Fleksibel dan dapat disesuaikan dengan kebutuhan bisnis.\n\nDengan keunggulan tersebut, NoBox.AI menjadi solusi yang tepat bagi UMKM hingga perusahaan besar untuk membangun layanan pelanggan yang profesional, modern, dan berkelanjutan.',
+              '• Saves time and operational costs through service automation.\n• Improves customer satisfaction with fast and consistent responses.\n• Simplifies communication management from multiple platforms in one system.\n• Supports data-driven decision-making with reporting and monitoring features.\n• Flexible and customizable to business needs.\n\nWith these advantages, NoBox.AI is the right solution for SMEs to large enterprises to build professional, modern, and sustainable customer service.',
         ),
         _buildMenuSection(
           context,
           3,
-          title: 'Target Pengguna',
+          title: 'Target Users',
           content:
-              'NoBox.AI dirancang untuk membantu berbagai jenis organisasi dan pelaku usaha dalam mengelola komunikasi dan layanan pelanggan secara lebih efektif:\n\n• **UMKM:** Mengelola pesan, promosi, dan layanan otomatis tanpa tim besar.\n• **Perusahaan Menengah & Besar:** Mendukung operasional CS kompleks dengan sistem terintegrasi dan pelaporan.\n• **Startup Digital:** Membangun sistem layanan pelanggan modern berbasis AI.\n• **Lembaga Pendidikan:** Melayani pertanyaan siswa dan orang tua lintas kanal.\n• **Instansi Pemerintah:** Mendukung pelayanan masyarakat yang responsif dan transparan.\n• **E-Commerce & Marketplace:** Pengelolaan pesanan dan komplain secara otomatis dan terpusat.',
+              'NoBox.AI is designed to help various organizations and businesses manage communication and customer service more effectively:\n\n• **SMEs:** Manage messages, promotions, and automated services without a large team.\n• **Medium & Large Enterprises:** Support complex CS operations with integrated systems and reporting.\n• **Digital Startups:** Build modern AI-based customer service systems.\n• **Educational Institutions:** Handle student and parent inquiries across channels.\n• **Government Agencies:** Support responsive and transparent public services.\n• **E-Commerce & Marketplaces:** Automated and centralized order and complaint management.',
         ),
         _buildMenuSection(
           context,
           4,
-          title: 'Gambaran Umum',
+          title: 'Overview',
           content:
-              'NoBox.AI adalah aplikasi kecerdasan buatan (AI) yang dirancang untuk meningkatkan kualitas layanan marketing dan customer service di instansi pendidikan, bisnis, dan pemerintahan. Platform ini membantu mengumpulkan, mengelola, dan menganalisis data pelanggan secara terintegrasi.\n\nDengan dukungan chatbot cerdas dan sistem omnichannel, NoBox.AI mampu menangani komunikasi pelanggan selama 24 jam nonstop sepanjang tahun, sehingga bisnis dapat memberikan layanan yang lebih cepat, konsisten, dan profesional.',
+              'NoBox.AI is an artificial intelligence (AI) application designed to enhance marketing and customer service quality in educational institutions, businesses, and government. The platform helps collect, manage, and analyze customer data in an integrated manner.\n\nWith intelligent chatbot support and omnichannel systems, NoBox.AI can handle customer communication 24/7 throughout the year, enabling businesses to provide faster, more consistent, and professional service.',
         ),
         _buildMenuSection(
           context,
           5,
-          title: 'Modul Utama NoBox.AI',
+          title: 'Core NoBox.AI Modules',
           content:
-              'NoBox.AI terdiri dari beberapa modul utama yang saling terintegrasi untuk mendukung operasional bisnis secara menyeluruh, mulai dari komunikasi pelanggan hingga pengelolaan sistem.\n\n• **Pesan:** Mengelola seluruh percakapan pelanggan dari berbagai kanal komunikasi.\n• **CRM:** Menyimpan dan mengelola data pelanggan, status prospek, dan aktivitas penjualan.\n• **Formulir:** Membuat formulir digital seperti pendaftaran dan survei pelanggan.\n• **Promosi:** Pengiriman pesan promosi dan campaign pemasaran secara terjadwal.\n• **Kontak:** Mengelola database pelanggan.\n• **Akun:** Mengatur data akun pengguna, lisensi, dan status layanan.\n• **AI Agents:** Mengelola chatbot berbasis AI sesuai skenario.\n• **Human Agents:** Mengatur agen manusia untuk percakapan lanjutan.\n• **Berlangganan:** Informasi paket layanan dan fitur yang tersedia.\n• **Billing:** Mengelola tagihan dan status transaksi.\n• **Pengaturan:** Mengatur sistem secara menyeluruh termasuk profil, file manager, dan integrasi.',
+              'NoBox.AI consists of several core modules that integrate to support comprehensive business operations, from customer communication to system management.\n\n• **Messages:** Manage all customer conversations from multiple channels.\n• **CRM:** Store and manage customer data, prospect status, and sales activities.\n• **Forms:** Create digital forms for registration and customer surveys.\n• **Promotions:** Schedule and send promotional messages and marketing campaigns.\n• **Contacts:** Manage customer databases.\n• **Accounts:** Manage user accounts, licenses, and service status.\n• **AI Agents:** Manage AI chatbots based on scenarios.\n• **Human Agents:** Manage human agents for advanced conversations.\n• **Subscriptions:** Service package and feature information.\n• **Billing:** Manage invoices and transaction status.\n• **Settings:** Comprehensive system configuration including profile, file manager, and integrations.',
         ),
         _buildMenuSection(
           context,
           6,
-          title: 'Detail Keunggulan',
+          title: 'Feature Details',
           content:
-              'NoBox.AI memiliki berbagai keunggulan yang mendukung kemudahan penggunaan, keamanan data, dan integrasi sistem.\n\n**Tampilan:**\n• **Menu Per Role User:** Tampilan menu disesuaikan dengan peran pengguna\n• **Tracking Data:** Memudahkan pemantauan aktivitas dan data sistem\n• **Tampilan Fleksibel:** Layout dapat disesuaikan dengan kebutuhan pengguna\n• **Pilihan Tema:** Tersedia tema terang dan gelap\n\n**Keamanan:**\n• **Hak Akses User:** Pengaturan hak akses berdasarkan role pengguna\n\n**Integrasi:**\n• **Import Kontak:** Mendukung file Excel dan CSV\n• **Export Kontak:** Mendukung format Google Contacts',
+              'NoBox.AI offers various advantages supporting ease of use, data security, and system integration.\n\n**Interface:**\n• **Role-based Menus:** Menu display tailored to user roles\n• **Data Tracking:** Easy monitoring of system activities and data\n• **Flexible Layout:** Customizable layout per user needs\n• **Theme Options:** Light and dark themes available\n\n**Security:**\n• **User Access Rights:** Role-based access control\n\n**Integration:**\n• **Contact Import:** Supports Excel and CSV files\n• **Contact Export:** Supports Google Contacts format',
         ),
       ],
     );

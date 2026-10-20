@@ -150,8 +150,8 @@ class _ChatListPageState extends State<ChatListPage>
               SnackBar(
                 content: Text(
                   count == 1
-                      ? 'Status sematan obrolan diperbarui'
-                      : '$count obrolan disematkan/diperbarui',
+                      ? 'Chat pin status updated'
+                      : '$count chats pinned/updated',
                 ),
                 duration: const Duration(seconds: 1),
               ),
@@ -254,7 +254,7 @@ class _ChatListPageState extends State<ChatListPage>
         e.contains('network is unreachable') ||
         e.contains('no route to host') ||
         e.contains('xmlhttprequest error')) {
-      return 'Tidak ada koneksi internet';
+      return 'No internet connection';
     }
 
     // 2. Server error / server mati / tidak merespons
@@ -275,10 +275,10 @@ class _ChatListPageState extends State<ChatListPage>
     if (e.contains('socketexception') ||
         e.contains('connection error') ||
         e.contains('connection errored')) {
-      return 'Tidak ada koneksi internet';
+      return 'No internet connection';
     }
 
-    return 'Gagal memuat percakapan. Silakan coba lagi.';
+    return 'Failed to load conversations. Please try again.';
   }
 
   @override
@@ -326,7 +326,7 @@ class _ChatListPageState extends State<ChatListPage>
                       style: const TextStyle(color: Colors.white, fontSize: 16),
                       cursorColor: Colors.white,
                       decoration: InputDecoration(
-                        hintText: 'Cari kontak...',
+                        hintText: 'Search contacts...',
                         hintStyle: TextStyle(
                           color: Colors.white.withOpacity(0.7),
                         ),
@@ -545,7 +545,7 @@ class _ChatListPageState extends State<ChatListPage>
                                 ),
                                 const SizedBox(width: 16),
                                 const Text(
-                                  'Tentang NoBox.ai',
+                                  'About NoBox.ai',
                                   style: TextStyle(fontSize: 16),
                                 ),
                               ],
@@ -622,7 +622,7 @@ class _ChatListPageState extends State<ChatListPage>
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Gagal memuat percakapan',
+                        'Failed to load conversations',
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.orange.shade900,
@@ -636,7 +636,7 @@ class _ChatListPageState extends State<ChatListPage>
                         minimumSize: const Size(0, 28),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      child: const Text('Coba Lagi'),
+                      child: const Text('Retry'),
                     ),
                   ],
                 ),
@@ -692,7 +692,7 @@ class _ChatListPageState extends State<ChatListPage>
                         const SizedBox(height: 16),
                         Text(
                           isSearching
-                              ? 'Kontak tidak ditemukan'
+                              ? 'Contact not found'
                               : 'No conversation yet',
                           style: TextStyle(
                             fontSize: 16,
@@ -703,7 +703,7 @@ class _ChatListPageState extends State<ChatListPage>
                         if (isSearching) ...[
                           const SizedBox(height: 8),
                           Text(
-                            'Coba cari dengan kata kunci lain',
+                            'Try a different search keyword',
                             style: TextStyle(
                               fontSize: 13,
                               color: Colors.grey[500],
@@ -728,7 +728,7 @@ class _ChatListPageState extends State<ChatListPage>
                           TextButton.icon(
                             onPressed: () => chatProvider.fetchChats(),
                             icon: const Icon(Icons.refresh),
-                            label: const Text('Coba Lagi'),
+                            label: const Text('Retry'),
                           )
                         else if (isSearching)
                           TextButton.icon(
@@ -740,7 +740,7 @@ class _ChatListPageState extends State<ChatListPage>
                               });
                             },
                             icon: const Icon(Icons.clear),
-                            label: const Text('Hapus Pencarian'),
+                            label: const Text('Clear Search'),
                           ),
                       ],
                     ),
@@ -755,7 +755,7 @@ class _ChatListPageState extends State<ChatListPage>
                     if (otherContacts.isNotEmpty) {
                       searchItems.add(
                         _buildSearchSectionHeader(
-                          title: 'Obrolan Aktif',
+                          title: 'Active Chats',
                           count: chats.length,
                           icon: Icons.chat_bubble_outline,
                           isDark: isDark,
@@ -777,7 +777,7 @@ class _ChatListPageState extends State<ChatListPage>
                   if (otherContacts.isNotEmpty) {
                     searchItems.add(
                       _buildSearchSectionHeader(
-                        title: 'Kontak dari Buku Alamat',
+                        title: 'Contacts from Address Book',
                         count: otherContacts.length,
                         icon: Icons.contacts_outlined,
                         isDark: isDark,
@@ -800,7 +800,7 @@ class _ChatListPageState extends State<ChatListPage>
                       padding: const EdgeInsets.symmetric(vertical: 24),
                       child: Center(
                         child: Text(
-                          'Tidak ada hasil lagi',
+                          'No more results',
                           style: TextStyle(
                             color: isDark
                                 ? Colors.grey.shade500
@@ -838,7 +838,7 @@ class _ChatListPageState extends State<ChatListPage>
                             padding: EdgeInsets.symmetric(vertical: 24),
                             child: Center(
                               child: Text(
-                                'Semua percakapan sudah ditampilkan',
+                                'All conversations displayed',
                                 style: TextStyle(
                                   color: Colors.grey,
                                   fontSize: 12,
@@ -982,7 +982,7 @@ class _ChatListPageState extends State<ChatListPage>
     ChatProvider chatProvider,
     bool isDark,
   ) {
-    final name = (contact['Name'] ?? contact['Nm'] ?? 'Kontak').toString();
+    final name = (contact['Name'] ?? contact['Nm'] ?? 'Contact').toString();
     final phone = (contact['Phone'] ??
             contact['Hp'] ??
             contact['Mobile'] ??
@@ -1083,7 +1083,7 @@ class _ChatListPageState extends State<ChatListPage>
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          phone.isNotEmpty ? phone : 'Kontak dari server',
+                          phone.isNotEmpty ? phone : 'Contact from server',
                           style: TextStyle(
                             fontSize: 13,
                             color: isDark
@@ -1624,7 +1624,7 @@ class _ChatListPageState extends State<ChatListPage>
                             setDialogState(() => selectedAccount = val);
                           },
                           enabled: selectedChannel != null,
-                          hintText: selectedChannel != null ? '--select--' : 'Pilih Channel dulu',
+                          hintText: selectedChannel != null ? '--select--' : 'Select Channel first',
                         ),
 
                         // Tombol Radio untuk Pilihan Tujuan (To)
@@ -1755,8 +1755,8 @@ class _ChatListPageState extends State<ChatListPage>
                             },
                             enabled: selectedChannel != null,
                             hintText: selectedChannel == null
-                                ? 'Pilih Channel dulu'
-                                : (groupNames.isEmpty ? 'Tidak ada grup untuk channel ini' : '--select--'),
+                                ? 'Select Channel first'
+                                : (groupNames.isEmpty ? 'No groups for this channel' : '--select--'),
                           )
                         else if (selectedChat != 'Group' && selectedTo == 'Contact')
                           buildDropdownRow(
@@ -1909,7 +1909,7 @@ class _ChatListPageState extends State<ChatListPage>
                                             selectedGroup!.contains('Tidak ada grup'))) {
                                       showValidationToast(
                                         'Kolom Belum Lengkap!',
-                                        'Silakan pilih Grup tujuan dari daftar yang tersedia.',
+                                        'Please select a Group from the available list.',
                                       );
                                       return;
                                     } else if (selectedTo == 'Manual' &&
@@ -1936,7 +1936,7 @@ class _ChatListPageState extends State<ChatListPage>
                                             ))) {
                                       showValidationToast(
                                         'Kolom Belum Lengkap!',
-                                        'Silakan pilih Kontak penerima dari daftar yang tersedia.',
+                                        'Please select a Contact recipient from the available list.',
                                       );
                                       return;
                                     } else if (selectedTo == 'Manual' &&
@@ -2374,7 +2374,7 @@ class _ChatListPageState extends State<ChatListPage>
                                     showDialog(
                                       context: dialogContext,
                                       builder: (ctx) => AlertDialog(
-                                        title: const Text('Gagal Membuat Percakapan'),
+                                        title: const Text('Failed to Create Conversation'),
                                         content: Text('Terjadi kesalahan:\n\n${result['error']}\n\nPastikan konfigurasi channel di server sudah benar dan sedang online.'),
                                         actions: [
                                           TextButton(
@@ -2948,7 +2948,7 @@ class _ChatListPageState extends State<ChatListPage>
             .replaceAll('🖼', '')
             .replaceAll(RegExp(r'^(Photo|Foto)\s*', caseSensitive: false), '')
             .trim();
-        return cleanedCap.isNotEmpty ? '📷 $cleanedCap' : '📷 Foto';
+        return cleanedCap.isNotEmpty ? '📷 $cleanedCap' : '📷 Photo';
       }
 
       String t = text.trim();
@@ -2960,12 +2960,12 @@ class _ChatListPageState extends State<ChatListPage>
       final match = RegExp(r'^(Photo|Foto)\s*(.*)$', caseSensitive: false).firstMatch(t);
       if (match != null) {
         final desc = match.group(2)?.trim() ?? '';
-        return desc.isNotEmpty ? '📷 $desc' : '📷 Foto';
+        return desc.isNotEmpty ? '📷 $desc' : '📷 Photo';
       }
       if (t.isNotEmpty && t.toLowerCase() != 'photo' && t.toLowerCase() != 'foto') {
         return '📷 $t';
       }
-      return '📷 Foto';
+      return '📷 Photo';
     }
 
     final isRawPhotoString = RegExp(r'^(📷|🖼️|🖼)\s*(Photo|Foto)', caseSensitive: false).hasMatch(trimmedMsg);
@@ -2979,7 +2979,7 @@ class _ChatListPageState extends State<ChatListPage>
         isAudioMessage(trimmedMsg);
 
     if (isVoiceNote) {
-      displayMessage = '🎤 Pesan Suara';
+      displayMessage = '🎤 Voice Message';
       parsedAsMedia = true;
     } else if (exactStickerLabels.contains(lowerTrimmed) || chat.lastMessageType == '16' || chat.lastMessageType == '17') {
       displayMessage = '🌟 Sticker';
@@ -3199,20 +3199,20 @@ class _ChatListPageState extends State<ChatListPage>
             debugPrint('DEBUG STICKER JSON: isSticker=$isSticker, typeVal=$typeVal, filename=$filename, originalName=$originalName, msg=$trimmedMsg => result=$displayMessage');
             parsedAsMedia = true;
           } else if (isAudio) {
-            displayMessage = '🎤 Pesan Suara';
+            displayMessage = '🎤 Voice Message';
             parsedAsMedia = true;
           } else if (isDocument && !isSticker) {
-            String docName = 'Dokumen';
+            String docName = 'Document';
             if (originalName.isNotEmpty) {
               docName =
                   targetMap['OriginalName']?.toString() ??
                   targetMap['originalname']?.toString() ??
-                  'Dokumen';
+                  'Document';
             } else if (filename.isNotEmpty) {
               docName =
                   (targetMap['Filename']?.toString() ??
                           targetMap['url']?.toString() ??
-                          'Dokumen')
+                          'Document')
                       .split('/')
                       .last;
             }
@@ -3231,10 +3231,10 @@ class _ChatListPageState extends State<ChatListPage>
             displayMessage = '🎬 Video${caption.isNotEmpty ? ' $caption' : ''}';
             parsedAsMedia = true;
           } else if (isLocation) {
-            displayMessage = '📍 Lokasi';
+            displayMessage = '📍 Location';
             parsedAsMedia = true;
           } else if (isContact) {
-            displayMessage = '👤 Kontak';
+            displayMessage = '👤 Contact';
             parsedAsMedia = true;
           } else if (filename.isNotEmpty || originalName.isNotEmpty) {
             // Cek apakah backend secara eksplisit memberitahu tipe media di lastMessageType
@@ -3242,7 +3242,7 @@ class _ChatListPageState extends State<ChatListPage>
             if (overrideType.contains('voice note') ||
                 overrideType.contains('audio') ||
                 overrideType == '2') {
-              displayMessage = '🎤 Pesan Suara';
+              displayMessage = '🎤 Voice Message';
             } else if (overrideType.contains('image') ||
                 overrideType.contains('photo') ||
                 overrideType == '3') {
@@ -3345,7 +3345,7 @@ class _ChatListPageState extends State<ChatListPage>
           overrideType.contains('audio') ||
           overrideType == '2' ||
           isAudioMessage(trimmedMsg)) {
-        displayMessage = '🎤 Pesan Suara';
+        displayMessage = '🎤 Voice Message';
         parsedAsMedia = true;
       } else if (!isLikelyPlainText) {
         if (overrideType.contains('image') ||
@@ -3395,11 +3395,11 @@ class _ChatListPageState extends State<ChatListPage>
       } else if (overrideType == '15' ||
           overrideType == '11' ||
           overrideType.contains('location')) {
-        displayMessage = '📍 Lokasi';
+        displayMessage = '📍 Location';
       } else if (overrideType == '14' ||
           overrideType == '10' ||
           overrideType.contains('contact')) {
-        displayMessage = '👤 Kontak';
+        displayMessage = '👤 Contact';
       } else if (overrideType.contains('unsupported')) {
         return Row(
           children: [
@@ -3477,7 +3477,7 @@ class _ChatListPageState extends State<ChatListPage>
           chat.lastMessageType == '2' ||
           chat.lastMessageType?.toLowerCase() == 'voice note' ||
           chat.lastMessageType?.toLowerCase() == 'audio') {
-        displayMessage = '🎤 Pesan Suara';
+        displayMessage = '🎤 Voice Message';
         parsedAsMedia = true;
       }
       // Jika sudah ditandai sebagai dokumen (📄), TETAP jadikan Dokumen terlepas dari ekstensinya!
@@ -4353,7 +4353,7 @@ class _ChatListPageState extends State<ChatListPage>
                   content: Text(
                     isPinned
                         ? 'Pin $sender dilepas'
-                        : '$sender disematkan di atas',
+                        : '$sender pinned to top',
                   ),
                   duration: const Duration(seconds: 1),
                 ),
@@ -4458,7 +4458,7 @@ class _ChatListPageState extends State<ChatListPage>
                       content: Text(
                         success
                             ? '${chat.sender} berhasil di-assign!'
-                            : 'Gagal meng-assign chat',
+                            : 'Failed to assign chat',
                       ),
                     ),
                   );
@@ -4508,7 +4508,7 @@ class _ChatListPageState extends State<ChatListPage>
                       content: Text(
                         success
                             ? '${chat.sender} berhasil diselesaikan!'
-                            : 'Gagal menyelesaikan chat',
+                            : 'Failed to resolve chat',
                       ),
                     ),
                   );

@@ -651,7 +651,7 @@ class _EditContactPageState extends State<EditContactPage> {
                       CircularProgressIndicator(color: Colors.blue),
                       SizedBox(height: 16),
                       Text(
-                        'Memuat data contact...',
+                        'Loading contact data...',
                         style: TextStyle(color: Colors.blueGrey, fontSize: 14),
                       ),
                     ],
@@ -911,7 +911,7 @@ class _EditContactPageState extends State<EditContactPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Gagal mengambil foto: $e'),
+            content: Text('Failed to get photo: $e'),
             backgroundColor: Colors.red,
           ),
         );

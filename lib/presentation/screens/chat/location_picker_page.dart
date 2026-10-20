@@ -124,7 +124,7 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
         backgroundColor: Colors.blue,
         iconTheme: const IconThemeData(color: Colors.white),
         title: const Text(
-          'Kirim Lokasi',
+          'Send Location',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
       ),
@@ -274,7 +274,7 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Kirim lokasi ini',
+                              'Send this location',
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 15,
@@ -312,7 +312,7 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
                       ),
                       icon: const Icon(Icons.send, size: 20),
                       label: const Text(
-                        'Kirim Lokasi',
+                        'Send Location',
                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                       ),
                       onPressed: () {

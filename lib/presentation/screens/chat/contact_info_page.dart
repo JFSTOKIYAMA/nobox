@@ -411,7 +411,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
             children: [
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text('Pilih Akun', style: TextStyle(
+                child: Text('Select Account', style: TextStyle(
                   fontSize: 18, fontWeight: FontWeight.bold,
                   color: isDark ? Colors.white : Colors.black87,
                 )),
@@ -556,7 +556,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                   child: const Icon(Icons.filter_alt_off, color: Colors.blue, size: 24),
                 ),
                 const SizedBox(width: 16),
-                Text('Hapus Funnel', style: TextStyle(
+                Text('Remove Funnel', style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: isDark ? Colors.white : Colors.black87,
@@ -645,7 +645,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                   child: const Icon(Icons.label_off, color: Colors.blue, size: 24),
                 ),
                 const SizedBox(width: 16),
-                Text('Hapus Tag', style: TextStyle(
+                Text('Remove Tag', style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: isDark ? Colors.white : Colors.black87,
@@ -712,7 +712,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'Tambah Tag',
+                'Add Tag',
                 style: TextStyle(color: Colors.blue, fontWeight: FontWeight.w600, fontSize: 18),
               ),
               InkWell(
@@ -825,7 +825,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'Tambah Catatan',
+                'Add Note',
                 style: TextStyle(color: Colors.blue, fontWeight: FontWeight.w600, fontSize: 18),
               ),
               InkWell(
@@ -1866,7 +1866,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                                           if (filtered.isEmpty) {
                                             return const Padding(
                                               padding: EdgeInsets.all(16),
-                                              child: Center(child: Text('Funnel tidak ditemukan', style: TextStyle(color: Colors.grey, fontSize: 13))),
+                                              child: Center(child: Text('Funnel not found', style: TextStyle(color: Colors.grey, fontSize: 13))),
                                             );
                                           }
 
@@ -2582,13 +2582,13 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                   });
                   _showCenterSnackBar(
                     context: this.context,
-                    message: isCurrentlyBlocked ? 'Unblock sukses' : 'Block sukses',
+                    message: isCurrentlyBlocked ? 'Contact unblocked successfully' : 'Contact blocked successfully',
                     backgroundColor: Colors.green.withOpacity(0.9),
                   );
                 } else {
                   _showCenterSnackBar(
                     context: this.context,
-                    message: 'Gagal $actionName contact',
+                    message: 'Failed to $actionName contact',
                     backgroundColor: Colors.red.shade600,
                   );
                 }

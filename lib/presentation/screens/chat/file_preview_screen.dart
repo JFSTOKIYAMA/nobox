@@ -328,7 +328,7 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
               const Icon(Icons.broken_image, color: Colors.white54, size: 64),
               const SizedBox(height: 12),
               Text(
-                'Tidak dapat memuat gambar',
+                'Unable to load image',
                 style: TextStyle(color: Colors.grey[400], fontSize: 14),
               ),
             ],

@@ -19,7 +19,7 @@ class StarredMessagesPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pesan Berbintang'),
+        title: const Text('Starred Messages'),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
       ),
@@ -37,7 +37,7 @@ class StarredMessagesPage extends StatelessWidget {
                   Icon(Icons.star_border, size: 80, color: Colors.amber.withOpacity(0.4)),
                   const SizedBox(height: 16),
                   Text(
-                    'Belum ada pesan berbintang',
+                    'No starred messages yet',
                     style: TextStyle(
                       fontSize: 16,
                       color: Colors.grey[600],
@@ -45,7 +45,7 @@ class StarredMessagesPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Tekan lama pada pesan dan pilih ⭐ untuk menandai',
+                    'Long press a message and tap ⭐ to star it',
                     style: TextStyle(
                       fontSize: 13,
                       color: Colors.grey[400],
@@ -82,7 +82,7 @@ class StarredMessagesPage extends StatelessWidget {
                   chatProvider.toggleStar(msgId);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Bintang dihapus'),
+                      content: Text('Star removed'),
                       duration: Duration(seconds: 1),
                     ),
                   );
@@ -108,7 +108,7 @@ class StarredMessagesPage extends StatelessWidget {
                       child: const Icon(Icons.star, color: Colors.amber, size: 20),
                     ),
                     title: Text(
-                      sender.isNotEmpty ? sender : 'Saya',
+                      sender.isNotEmpty ? sender : 'Me',
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 14,

@@ -111,8 +111,8 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
         SnackBar(
           content: Text(
             success
-                ? 'Agen "$name" berhasil ditugaskan'
-                : 'Gagal menugaskan agen: $errorMessage',
+                ? 'Agent "$name" assigned successfully'
+                : 'Failed to assign agent: $errorMessage',
           ),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

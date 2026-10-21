@@ -643,7 +643,13 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
   Widget _buildStickerMessage(bool isMe, bool isDarkMode) {
     final imageUrl = widget.message.imageUrl ?? widget.message.videoUrl ?? '';
     final lowerUrl = imageUrl.toLowerCase();
-    final isAnimatedVideoSticker = lowerUrl.contains('.webm') || lowerUrl.contains('.mp4') || lowerUrl.contains('.mov');
+    
+    // Classify sticker type for proper rendering
+    final isTgsSticker = lowerUrl.contains('.tgs');           // Telegram Lottie stickers
+    final isWebpSticker = lowerUrl.contains('.webp');         // Static WebP stickers
+    final isAnimatedVideoSticker = lowerUrl.contains('.webm') || lowerUrl.contains('.mp4') || lowerUrl.contains('.mov'); // WhatsApp animated stickers
+    final isStaticSticker = isWebpSticker || lowerUrl.contains('.png') || lowerUrl.contains('.jpg') || lowerUrl.contains('.jpeg');
+    final needsVideoPlayer = isAnimatedVideoSticker && !isTgsSticker;
 
     return Column(
       crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -654,45 +660,120 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
             maxHeight: 180,
           ),
           child: imageUrl.isNotEmpty
-              ? (isAnimatedVideoSticker
-                  ? AnimatedVideoSticker(url: imageUrl)
-                  : CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      fit: BoxFit.contain,
-                      placeholder: (_, __) => const SizedBox(
-                        width: 100,
-                        height: 100,
-                        child: Center(
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      ),
-                      errorWidget: (_, __, ___) => Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          color: isDarkMode ? Colors.grey[800] : Colors.grey[200],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Center(
-                          child: Icon(Icons.emoji_emotions_outlined, size: 48, color: Colors.grey),
-                        ),
-                      ),
-                    ))
-              : Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: isDarkMode ? Colors.grey[800] : Colors.grey[200],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Center(
-                    child: Icon(Icons.emoji_emotions_outlined, size: 48, color: Colors.grey),
-                  ),
-                ),
+              ? (isTgsSticker
+                  // Telegram .tgs = Lottie animation, needs Lottie player (fallback to static for now)
+                  ? _buildTgsStickerFallback(isDarkMode)
+                  : (needsVideoPlayer
+                      ? AnimatedVideoSticker(url: imageUrl)
+                      : _buildStaticSticker(imageUrl, isDarkMode)))
+              : _buildStickerPlaceholder(isDarkMode),
         ),
         const SizedBox(height: 2),
         _buildTimestampRow(isMe),
       ],
+    );
+  }
+
+  Widget _buildStaticSticker(String imageUrl, bool isDarkMode) {
+    return CachedNetworkImage(
+      imageUrl: imageUrl,
+      fit: BoxFit.contain,
+      placeholder: (_, __) => _buildStickerPlaceholder(isDarkMode),
+      errorWidget: (_, __, ___) => _buildStickerError(isDarkMode),
+    );
+  }
+
+  Widget _buildTgsStickerFallback(bool isDarkMode) {
+    // .tgs = Telegram Lottie stickers. VideoPlayer can't play them.
+    // Show static preview with "animated" badge.
+    return Container(
+      width: 160,
+      height: 160,
+      decoration: BoxDecoration(
+        color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.animation,
+                  size: 48,
+                  color: isDarkMode ? Colors.blue[300] : Colors.blue[600],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Animated Sticker',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  '(Tap to open in Telegram)',
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: isDarkMode ? Colors.grey[500] : Colors.grey[500],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Animated badge
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.orange[600],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'ANIMATED',
+                style: TextStyle(
+                  fontSize: 8,
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStickerPlaceholder(bool isDarkMode) {
+    return Container(
+      width: 100,
+      height: 100,
+      decoration: BoxDecoration(
+        color: isDarkMode ? Colors.grey[800] : Colors.grey[200],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Center(
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+    );
+  }
+
+  Widget _buildStickerError(bool isDarkMode) {
+    return Container(
+      width: 100,
+      height: 100,
+      decoration: BoxDecoration(
+        color: isDarkMode ? Colors.grey[800] : Colors.grey[200],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Center(
+        child: Icon(Icons.emoji_emotions_outlined, size: 48, color: Colors.grey),
+      ),
     );
   }
 

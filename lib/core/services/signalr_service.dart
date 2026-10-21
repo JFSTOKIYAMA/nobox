@@ -402,6 +402,13 @@ class SignalRService {
       }
 
       final msgContent = messageData['Msg']?.toString() ?? '';
+      final msgType = messageData['Type']?.toString() ?? messageData['type']?.toString() ?? messageData['BodyType']?.toString() ?? '';
+      
+      // DEBUG: Log tipe pesan untuk diagnosis pesan edit
+      if (msgType.isNotEmpty && msgType != '1') {
+        debugPrint('🔍 SignalR: Message received | Type=$msgType | Content="${msgContent.length > 100 ? msgContent.substring(0, 100) : msgContent}" | Room=$roomId');
+      }
+      
       if (msgContent == 'Site.Inbox.DeletedMessage') {
         debugPrint(
           'SignalR: 🚫 Ignoring Site.Inbox.DeletedMessage to preserve local last message',

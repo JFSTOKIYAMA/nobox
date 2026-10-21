@@ -956,11 +956,14 @@ class ChatProvider with ChangeNotifier {
 
         // FIX: Registrasikan server-pinned chats ke local _pinnedIds secara stabil.
         // Pertahankan urutan yang sudah ada di _pinnedIds secara absolut agar tidak berubah posisi saat ada pesan baru.
+        // KONSISTEN: Tambahkan pinned chat baru ke AWAL (beginning) seperti togglePin,
+        // agar urutan "pinned terbaru di atas" konsisten di seluruh aplikasi.
         final serverPinnedIds = _chats.where((c) => c.isPinned).map((c) => c.id).toList();
         bool pinnedChanged = false;
         for (final id in serverPinnedIds) {
           if (!_pinnedIds.contains(id)) {
-            _pinnedIds.add(id);
+            // KONSISTEN dengan togglePin: tambah ke AWAL
+            _pinnedIds = {id, ..._pinnedIds};
             pinnedChanged = true;
           }
         }
@@ -1881,8 +1884,9 @@ class ChatProvider with ChangeNotifier {
           }
 
           // Daftarkan server-pinned chat ke _pinnedIds jika belum ada
+          // KONSISTEN: Tambahkan pinned chat baru ke AWAL (beginning) seperti togglePin
           if (chat.isPinned && !_pinnedIds.contains(chat.id)) {
-            _pinnedIds.add(chat.id);
+            _pinnedIds = {chat.id, ..._pinnedIds};
             _savePinnedState();
           }
 
@@ -2240,7 +2244,8 @@ class ChatProvider with ChangeNotifier {
               // karena dapat menyebabkan obrolan lama yang sudah dibaca ikut muncul unread = 1.
 
               if (chat.isPinned && !_pinnedIds.contains(chat.id)) {
-                _pinnedIds.add(chat.id);
+                // KONSISTEN: Tambahkan pinned chat baru ke AWAL (beginning) seperti togglePin
+                _pinnedIds = {chat.id, ..._pinnedIds};
                 _savePinnedState();
               }
 
@@ -2348,7 +2353,8 @@ class ChatProvider with ChangeNotifier {
                 chat = _applyTagAndFunnelMapping(chat, c);
 
                 if (chat.isPinned && !_pinnedIds.contains(chat.id)) {
-                  _pinnedIds.add(chat.id);
+                  // KONSISTEN: Tambahkan pinned chat baru ke AWAL (beginning) seperti togglePin
+                  _pinnedIds = {chat.id, ..._pinnedIds};
                   _savePinnedState();
                 }
 
@@ -2959,10 +2965,11 @@ class ChatProvider with ChangeNotifier {
     final pinnedInOrder = filtered.where((c) => c.isPinned).toList();
 
     // Pastikan semua pinned chat terdaftar di _pinnedIds agar urutannya konsisten dan stabil
+    // KONSISTEN: Tambahkan pinned chat baru ke AWAL (beginning) seperti togglePin
     bool pinnedChanged = false;
     for (final c in pinnedInOrder) {
       if (!_pinnedIds.contains(c.id)) {
-        _pinnedIds.add(c.id);
+        _pinnedIds = {c.id, ..._pinnedIds};
         pinnedChanged = true;
       }
     }

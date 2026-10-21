@@ -832,12 +832,25 @@ class Message {
         }
       } else if (typeVal == '16' || typeVal == '3') {
         msgType = MessageType.text;
-        content = '⚠️ Pesan ini tidak dapat ditampilkan. Buka WhatsApp di HP untuk melihat pesan ini.';
+        // FIX: Untuk pesan edit WhatsApp atau tipe tidak dikenal, coba ekstrak teks dulu
+        // Jika ada konten teks valid (bukan JSON kosong), gunakan itu
+        final hasReadableText = content.isNotEmpty && 
+            !content.startsWith('{') && 
+            !content.startsWith('[') &&
+            !content.toLowerCase().contains('site.inbox.deletedmessage');
+        if (!hasReadableText) {
+          content = '⚠️ Pesan ini tidak dapat ditampilkan. Buka WhatsApp di HP untuk melihat pesan ini.';
+        }
       }
     } else if (typeVal == '16' || typeVal == '3') {
       // No Files/File data available
       msgType = MessageType.text;
-      if (content.isEmpty || content.startsWith('{') || content.startsWith('[')) {
+      // FIX: Coba ekstrak teks readable untuk pesan edit/unknown type
+      final hasReadableText = content.isNotEmpty && 
+          !content.startsWith('{') && 
+          !content.startsWith('[') &&
+          !content.toLowerCase().contains('site.inbox.deletedmessage');
+      if (!hasReadableText) {
         content = '⚠️ Pesan ini tidak dapat ditampilkan. Buka WhatsApp di HP untuk melihat pesan ini.';
       }
     } else if (typeVal == '15' || typeVal == '11') {
@@ -848,6 +861,18 @@ class Message {
     } else if (typeVal == '14' || typeVal == '10') {
       msgType = MessageType.text;
       content = '👤 Contact';
+    } else if (typeVal != null && typeVal.isNotEmpty) {
+      // FIX: Catch-all untuk tipe pesan tidak dikenal (misal pesan edit WhatsApp dengan type baru)
+      // Coba ekstrak teks readable sebelum fallback ke error
+      msgType = MessageType.text;
+      final hasReadableText = content.isNotEmpty &&
+          !content.startsWith('{') &&
+          !content.startsWith('[') &&
+          !content.toLowerCase().contains('site.inbox.deletedmessage');
+      if (!hasReadableText) {
+        content = '⚠️ Pesan ini tidak dapat ditampilkan. Buka WhatsApp di HP untuk melihat pesan ini.';
+      }
+      debugPrint('⚠️ Message.fromJson: Unknown typeVal=$typeVal, content="${content.length > 50 ? content.substring(0, 50) : content}" -> treated as text');
     }
 
     // Fallback: if this is an image message but content is empty, set readable label

@@ -1052,7 +1052,11 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 'ChatDetail: ✅ Parsed ${_messages.length} archived messages',
               );
               _injectLocalReplies(_messages).then((_) {
-                if (mounted) setState(() {});
+                if (mounted) {
+                  setState(() {
+                    _invalidateDisplayMessagesCache();
+                  });
+                }
               });
             } catch (e) {
               debugPrint('ChatDetail: ❌ Error parsing archived messages: $e');
@@ -2576,6 +2580,13 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           : (_authProvider?.currentUser ?? (mounted ? Provider.of<AuthProvider>(context, listen: false).currentUser : '') ?? '');
 
       try {
+        // DEBUG: Log tipe pesan masuk via SignalR
+        final incomingType = messageData['Type']?.toString() ?? messageData['type']?.toString() ?? messageData['BodyType']?.toString() ?? '';
+        final incomingMsg = messageData['Msg']?.toString() ?? '';
+        if (incomingType.isNotEmpty && incomingType != '1') {
+          debugPrint('🔍 ChatDetail: SignalR message | Type=$incomingType | Msg="${incomingMsg.length > 100 ? incomingMsg.substring(0, 100) : incomingMsg}"');
+        }
+        
         var parsedMessage = Message.fromJson(
           messageData,
           currentUserEmail,
@@ -2622,20 +2633,49 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                   }
                   
                   // 2. FIX: Untuk lampiran (Gambar, Dokumen, Voice Note), teks lokal ('📷 Photo')
-                  // TIDAK AKAN COCOK dengan JSON/URL dari server. Cocokkan berdasarkan tipe media.
+                  // TIDAK AKAN COCOK dengan JSON/URL dari server. Cocokkan berdasarkan tipe media + waktu toleransi 2 detik.
                   if (newMessage.messageType != MessageType.text && m.messageType == newMessage.messageType) {
-                    if (m.time == newMessage.time) return true;
+                    // FIX: Perluas toleransi waktu dari exact match menjadi 2 detik
+                    if (m.rawTime.isNotEmpty && newMessage.rawTime.isNotEmpty) {
+                      try {
+                        final timeM = DateTime.parse(m.rawTime.replaceAll('ZZ', 'Z'));
+                        final timeNew = DateTime.parse(newMessage.rawTime.replaceAll('ZZ', 'Z'));
+                        if (timeNew.difference(timeM).inSeconds.abs() <= 2) {
+                          return true;
+                        }
+                      } catch (_) {}
+                    }
+                    // Fallback: jika rawTime kosong, gunakan time (display time) dengan toleransi 2 detik
+                    if (m.time.isNotEmpty && newMessage.time.isNotEmpty) {
+                      try {
+                        final timeM = DateTime.parse(m.time.replaceAll('ZZ', 'Z'));
+                        final timeNew = DateTime.parse(newMessage.time.replaceAll('ZZ', 'Z'));
+                        if (timeNew.difference(timeM).inSeconds.abs() <= 2) {
+                          return true;
+                        }
+                      } catch (_) {}
+                    }
                   }
                   
-                  // 3. FIX: Fallback waktu (Pesan terkirim dalam 60 detik terakhir dengan tipe sama)
+                  // 3. FIX: Fallback waktu diperluas dari 60 ke 5 detik untuk pesan dengan tipe sama
                   if (m.messageType == newMessage.messageType && m.rawTime.isNotEmpty && newMessage.rawTime.isNotEmpty) {
                     try {
                       final timeM = DateTime.parse(m.rawTime.replaceAll('ZZ', 'Z'));
                       final timeNew = DateTime.parse(newMessage.rawTime.replaceAll('ZZ', 'Z'));
-                      if (timeNew.difference(timeM).inSeconds.abs() < 60) {
+                      if (timeNew.difference(timeM).inSeconds.abs() <= 5) {
                         return true;
                       }
                     } catch (_) {}
+                  }
+                  
+                  // 4. Fallback tambahan: jika konten mirip (substring) dan tipe sama
+                  if (m.messageType == newMessage.messageType) {
+                    final contentM = m.content.trim().toLowerCase();
+                    final contentNew = newMessage.content.trim().toLowerCase();
+                    if (contentM.isNotEmpty && contentNew.isNotEmpty &&
+                        (contentM.contains(contentNew) || contentNew.contains(contentM))) {
+                      return true;
+                    }
                   }
                 }
                 return false;
@@ -2972,6 +3012,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           // We can directly insert them at the start of _messages.
           _messages.insertAll(0, uniqueOlder);
           _messageSkip += _messagePageSize;
+          _invalidateDisplayMessagesCache();
 
           // Inject local replies for the older messages
           _injectLocalReplies(uniqueOlder).then((_) {
@@ -3079,6 +3120,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             onPressed: () {
               setState(() {
                 _messages.clear();
+                _invalidateDisplayMessagesCache();
               });
               Navigator.pop(context);
               ScaffoldMessenger.of(
@@ -3611,13 +3653,22 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         nLower.contains('sticker') ||
         nLower.contains('stiker');
 
-    final isAnimatedSticker =
+    final isAnimatedVideoSticker =
         pLower.endsWith('.webm') ||
-        pLower.endsWith('.tgs') ||
+        pLower.endsWith('.mp4') ||
+        pLower.endsWith('.mov') ||
         nLower.endsWith('.webm') ||
+        nLower.endsWith('.mp4') ||
+        nLower.endsWith('.mov');
+
+    final isTgsSticker =
+        pLower.endsWith('.tgs') ||
         nLower.endsWith('.tgs');
 
-    final displayContent = isAnimatedSticker ? '🎬 Sticker' : (isStickerFile ? '🌟 Sticker' : '🎬 Video');
+    // Static stickers: .webp, .png, .gif (non-animated)
+    final isStaticSticker = isStickerFile && !isAnimatedVideoSticker && !isTgsSticker;
+
+    final displayContent = isAnimatedVideoSticker ? '🎬 Sticker' : (isTgsSticker ? '🎬 Sticker' : (isStickerFile ? '🌟 Sticker' : '🎬 Video'));
 
     final newMessage = Message(
       content: displayContent,
@@ -3625,8 +3676,10 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       time: timeString,
       status: MessageStatus.sent,
       messageType: isStickerFile ? MessageType.sticker : MessageType.video,
-      videoUrl: pickedFile.path,
-      imageUrl: isStickerFile ? pickedFile.path : null,
+      // Only set videoUrl for animated video stickers (.webm, .mp4, .mov)
+      // Only set imageUrl for static stickers (.webp, .png, .gif) and TGS
+      videoUrl: isAnimatedVideoSticker ? pickedFile.path : null,
+      imageUrl: (isStaticSticker || isTgsSticker) ? pickedFile.path : null,
       ack: 1,
     );
 
@@ -5748,6 +5801,26 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   }
 
   // =====================================================================
+  // Cached filtered messages to avoid rebuilding list on every frame
+  List<Message>? _cachedDisplayMessages;
+  int _cachedMessagesHash = 0;
+
+  void _invalidateDisplayMessagesCache() {
+    _cachedDisplayMessages = null;
+    _cachedMessagesHash = 0;
+  }
+
+  List<Message> get _displayMessages {
+    final currentHash = (_messages.length * 31 + _messages.fold<int>(0, (h, m) => h + m.hashCode)) as int;
+    if (_cachedDisplayMessages != null && _cachedMessagesHash == currentHash) {
+      return _cachedDisplayMessages!;
+    }
+    _cachedDisplayMessages = _messages.where((m) => !m.isSystemMessage).toList();
+    _cachedMessagesHash = currentHash;
+    return _cachedDisplayMessages!;
+  }
+
+  // =====================================================================
   // [KATA KUNCI: Message List | Daftar Pesan | ListView Pesan | Bubble Chat | Riwayat Obrolan]
   // [FITUR: Daftar Tampilan Pesan Obrolan (Message List)]
   // [RENTANG: Baris ~5170 - 5330]
@@ -5793,8 +5866,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       );
     }
 
-    // Filter out noisy inline system events so they don't clutter the middle of the conversation
-    final displayMessages = _messages.where((m) => !m.isSystemMessage).toList();
+    final displayMessages = _displayMessages;
 
     // Status footer: shown at the bottom if archived or resolved
     final isResolved = chat.status.toLowerCase() == 'resolved';
@@ -5802,8 +5874,16 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     final extraItems = 1 + (hasStatusFooter ? 1 : 0);
     final totalItems = displayMessages.length + extraItems;
 
+    // Build a map for O(1) index lookup instead of O(n) indexOf
+    final messageToIndex = <Message, int>{};
+    for (int i = 0; i < displayMessages.length; i++) {
+      messageToIndex[displayMessages[i]] = i;
+    }
+
     // Align.topCenter + shrinkWrap ensures messages start from top when few,
     // while reverse: true keeps newest messages at bottom and auto-scroll works.
+    // FIX: Always use shrinkWrap: false to enable ListView virtualization.
+    // The Align(topCenter) handles "start from top when few messages" visually.
     return Align(
       key: _messageListKey,
       alignment: Alignment.topCenter,
@@ -5811,9 +5891,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         controller: _scrollController,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         reverse: true,
-        shrinkWrap: displayMessages.length < 15,
+        shrinkWrap: false, // FIX: Disable shrinkWrap to enable virtualization
         addRepaintBoundaries: true,
-        cacheExtent: 500,
+        cacheExtent: 1000, // Increased cache for smoother fast scrolling
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         itemCount: totalItems,
         itemBuilder: (context, index) {
@@ -5821,8 +5901,10 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
           // Index 0: Status footer (if applicable, positioned below the latest messages/day)
           if (hasStatusFooter && index == 0) {
-            return _buildStatusDivider(
-              isResolved: isResolved && !chat.isArchived,
+            return RepaintBoundary(
+              child: _buildStatusDivider(
+                isResolved: isResolved && !chat.isArchived,
+              ),
             );
           }
 
@@ -5831,7 +5913,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
           // Last index (top of screen): loading indicator or "No more messages"
           if (adjustedIndex == displayMessages.length) {
-            return _buildMessageListHeader();
+            return RepaintBoundary(
+              child: _buildMessageListHeader(),
+            );
           }
 
           // Map reversed index to message index (newest = index 0, oldest = last)
@@ -5841,11 +5925,12 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           final prevMessage = (displayIndex > 0)
               ? displayMessages[displayIndex - 1]
               : null;
-          final realIndex = _messages.indexOf(message);
+          // Use O(1) map lookup instead of O(n) indexOf
+          final realIndex = messageToIndex[message] ?? -1;
 
           // System message fallback
           if (message.isSystemMessage) {
-            return KeyedSubtree(
+            return RepaintBoundary(
               key: ValueKey('sys_${_getMessageKey(message)}'),
               child: _buildSystemMessage(message, isDark),
             );
@@ -5879,64 +5964,72 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             final effectiveId = message.id.isNotEmpty
                 ? message.id
                 : (message.idAlias ?? 'msg_${message.hashCode}');
-            unreadKey =
-                _unreadMessageKeys.putIfAbsent(effectiveId, () => GlobalKey());
+            // Use existing key or create once - don't create during build
+            unreadKey = _unreadMessageKeys[effectiveId];
+            if (unreadKey == null) {
+              unreadKey = GlobalKey();
+              _unreadMessageKeys[effectiveId] = unreadKey;
+            }
           }
 
-          return Column(
-            key: ValueKey('col_$msgKey'),
-            children: [
-              if (dateSeparator != null) dateSeparator,
-              // Divider "PESAN BELUM DIBACA" dihilangkan
-              // if (isFirstUnread && actualUnread > 0)
-              //   _buildUnreadMessagesDivider(actualUnread, isDark),
-              Container(
-                key: unreadKey,
-                color: isSelected
-                    ? (isDark
-                          ? Colors.blue.withOpacity(0.15)
-                          : Colors.blue.withOpacity(0.15))
-                    : Colors.transparent,
-                child: MessageBubbleWidget(
-                  key: ValueKey('bubble_$msgKey'),
-                  message: message,
-                  allMessages: _messages,
-                  isSelected: isSelected,
-                  onLongPress: () {
-                    setState(() {
-                      _isSelectionMode = true;
-                      _selectedMessageKeys.add(msgKey);
-                    });
-                  },
-                  onTap: () {
-                    if (_isSelectionMode) {
+          return RepaintBoundary(
+            child: Column(
+              key: ValueKey('col_$msgKey'),
+              children: [
+                if (dateSeparator != null) dateSeparator,
+                // Divider "PESAN BELUM DIBACA" dihilangkan
+                // if (isFirstUnread && actualUnread > 0)
+                //   _buildUnreadMessagesDivider(actualUnread, isDark),
+                Container(
+                  key: unreadKey,
+                  color: isSelected
+                      ? (isDark
+                            ? Colors.blue.withValues(alpha: 0.15)
+                            : Colors.blue.withValues(alpha: 0.15))
+                      : Colors.transparent,
+                  child: MessageBubbleWidget(
+                    key: ValueKey('bubble_$msgKey'),
+                    message: message,
+                    // FIX: Don't pass allMessages (huge list) to every bubble.
+                    // Bubble only needs its own message data.
+                    allMessages: null,
+                    isSelected: isSelected,
+                    onLongPress: () {
                       setState(() {
-                        if (_selectedMessageKeys.contains(msgKey)) {
-                          _selectedMessageKeys.remove(msgKey);
-                          if (_selectedMessageKeys.isEmpty) {
-                            _isSelectionMode = false;
-                          }
-                        } else {
-                          _selectedMessageKeys.add(msgKey);
-                        }
+                        _isSelectionMode = true;
+                        _selectedMessageKeys.add(msgKey);
                       });
-                    }
-                  },
-                  onReply: () {
-                    setState(() => _repliedMessage = message);
-                  },
-                  onForward: () {
-                    _showForwardDialog(message);
-                  },
-                  onCopy: () {
-                    Clipboard.setData(ClipboardData(text: message.content));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Pesan disalin')),
-                    );
-                  },
+                    },
+                    onTap: () {
+                      if (_isSelectionMode) {
+                        setState(() {
+                          if (_selectedMessageKeys.contains(msgKey)) {
+                            _selectedMessageKeys.remove(msgKey);
+                            if (_selectedMessageKeys.isEmpty) {
+                              _isSelectionMode = false;
+                            }
+                          } else {
+                            _selectedMessageKeys.add(msgKey);
+                          }
+                        });
+                      }
+                    },
+                    onReply: () {
+                      setState(() => _repliedMessage = message);
+                    },
+                    onForward: () {
+                      _showForwardDialog(message);
+                    },
+                    onCopy: () {
+                      Clipboard.setData(ClipboardData(text: message.content));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Message copied')),
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           );
         },
       ),

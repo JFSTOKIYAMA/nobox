@@ -126,16 +126,73 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // Stop native background service (Flutter SignalR takes over)
       BackgroundServiceManager.stopService();
       _startMessagePolling();
-      
+
       // Ensure SignalR reconnects if it was disconnected by the OS while suspended
       SignalRService().connect();
 
-      // Sync data that might have been missed while backgrounded
-      try {
-        context.read<ChatProvider>().refreshFirstPage();
-      } catch (e) {
-        debugPrint('Error caught at didChangeAppLifecycleState (refreshFirstPage): $e');
+      // Defer heavy work to next frame so UI stays responsive
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _handleResumeSync();
+      });
+    } else if (state == AppLifecycleState.detached) {
+      // App is being terminated (killed/swiped from recent apps)
+      debugPrint('🔴 App detached (terminated) — cleaning up resources...');
+      _cleanupOnTerminate();
+    }
+  }
+
+  /// Cleanup when app is terminated (killed/swiped from recent apps)
+  void _cleanupOnTerminate() {
+    debugPrint('🧹 Cleaning up on app termination...');
+    
+    // Stop background service (force stop in case _isRunning flag is out of sync)
+    BackgroundServiceManager.stopService(force: true);
+    
+    // Cancel polling timer
+    _messagePollingTimer?.cancel();
+    _messagePollingTimer = null;
+    
+    // Disconnect SignalR explicitly
+    SignalRService().disconnect();
+    
+    // Clear current room so notifications can work on next launch
+    PushNotificationService.setCurrentRoom(null);
+    
+    _wasInBackground = false;
+    debugPrint('✅ Termination cleanup complete');
+  }
+
+  /// Handle post-resume sync without blocking UI
+  void _handleResumeSync() async {
+    // Small delay to let UI settle first
+    await Future.delayed(const Duration(milliseconds: 150));
+    
+    if (!mounted) return;
+    
+    try {
+      final chatProvider = context.read<ChatProvider>();
+      
+      // Only refresh if SignalR is actually connected (avoid unnecessary API call)
+      final signalR = SignalRService();
+      if (signalR.isConnected) {
+        debugPrint('🔄 Resume: SignalR connected, doing light sync...');
+        // Light sync: just refresh chat list, not full page reload
+        await chatProvider.refreshFirstPage();
+      } else {
+        debugPrint('🔄 Resume: SignalR not yet connected, waiting for reconnect...');
+        // Wait for SignalR to reconnect (max 3 seconds)
+        for (int i = 0; i < 30; i++) {
+          await Future.delayed(const Duration(milliseconds: 100));
+          if (!mounted) return;
+          if (signalR.isConnected) {
+            debugPrint('🔄 Resume: SignalR connected, syncing...');
+            await chatProvider.refreshFirstPage();
+            break;
+          }
+        }
       }
+    } catch (e) {
+      debugPrint('Error in _handleResumeSync: $e');
     }
   }
 
@@ -341,6 +398,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _reconnectSub?.cancel();
     _blockUnblockSub?.cancel();
     _messagePollingTimer?.cancel();
+    // Explicitly disconnect SignalR to clean up WebSocket connection
+    SignalRService().disconnect();
     super.dispose();
   }
 

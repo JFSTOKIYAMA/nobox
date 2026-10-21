@@ -67,14 +67,15 @@ class BackgroundServiceManager {
   }
 
   /// Menghentikan background service.
-  /// Dipanggil saat aplikasi kembali ke foreground (resumed).
-  static Future<void> stopService() async {
-    if (!_isRunning) return;
+  /// Dipanggil saat aplikasi kembali ke foreground (resumed) atau terminated.
+  /// Parameter [force] memaksa stop meskipun flag _isRunning = false (berguna saat app di-kill).
+  static Future<void> stopService({bool force = false}) async {
+    if (!_isRunning && !force) return;
 
     try {
       await _channel.invokeMethod('stopBackgroundService');
       _isRunning = false;
-      debugPrint('BackgroundServiceManager: 🛑 Background service stopped.');
+      debugPrint('BackgroundServiceManager: 🛑 Background service stopped${force ? " (forced)" : ""}.');
     } on PlatformException catch (e) {
       debugPrint('BackgroundServiceManager: ❌ PlatformException: ${e.message}');
     } on MissingPluginException {

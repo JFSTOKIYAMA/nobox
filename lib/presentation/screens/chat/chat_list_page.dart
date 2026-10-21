@@ -3429,8 +3429,26 @@ class _ChatListPageState extends State<ChatListPage>
     }
 
     // 3. Fallback jika string kosong dan bukan media
+    // FIX: Cek apakah lastMessage asli mengandung teks readable (pesan edit/ditetik)
+    // sebelum fallback ke "Lampiran"
+    final originalLastMsg = chat.lastMessage.trim();
+    final hasReadableOriginalText = originalLastMsg.isNotEmpty &&
+        !originalLastMsg.startsWith('{') &&
+        !originalLastMsg.startsWith('[') &&
+        !originalLastMsg.toLowerCase().contains('site.inbox.deletedmessage') &&
+        !originalLastMsg.toLowerCase().contains('document(empty)') &&
+        !originalLastMsg.toLowerCase().contains('voice(empty)') &&
+        !originalLastMsg.toLowerCase().contains('image(empty)') &&
+        !originalLastMsg.toLowerCase().contains('video(empty)') &&
+        !originalLastMsg.toLowerCase().contains('audio(empty)');
+
     if (!parsedAsMedia && displayMessage.isEmpty && !isDeletedMessage) {
-      displayMessage = '📎 Lampiran';
+      if (hasReadableOriginalText) {
+        // Gunakan teks asli jika readable (misal pesan edit WhatsApp)
+        displayMessage = originalLastMsg;
+      } else {
+        displayMessage = '📎 Lampiran';
+      }
     }
 
     if (!parsedAsMedia &&
@@ -3438,7 +3456,11 @@ class _ChatListPageState extends State<ChatListPage>
             displayMessage == '📄 Document' ||
             displayMessage == '📄 File' ||
             displayMessage == '📎 Lampiran')) {
-      displayMessage = '📎 Lampiran';
+      if (hasReadableOriginalText) {
+        displayMessage = originalLastMsg;
+      } else {
+        displayMessage = '📎 Lampiran';
+      }
     }
 
     // 4. Deteksi nama file mentah (non-JSON) berdasarkan ekstensi/pola nama

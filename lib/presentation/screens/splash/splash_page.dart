@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -23,80 +24,126 @@ class SplashPage extends StatefulWidget {
 }
 
 class _SplashPageState extends State<SplashPage> {
+  static SharedPreferences? _sharedPrefsCache;
+  Timer? _navigationTimer;
+  bool _hasNavigated = false;
+
   @override
   void initState() {
     super.initState();
     debugPrint('SplashPage: initState');
-    _checkLogin();
+    // Start initialization immediately but DON'T block the first frame
+    _initializeApp();
   }
 
-  // [ACTION: SPLASH_INIT] - Mengeksekusi pengecekan login, tema, dan koneksi server
-  void _checkLogin() async {
+  @override
+  void dispose() {
+    _navigationTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Initialize app components in background, navigate when ready
+  /// This runs asynchronously without blocking the UI thread
+  Future<void> _initializeApp() async {
     try {
-      debugPrint('SplashPage: Starting _checkLogin');
+      debugPrint('SplashPage: Starting background initialization');
+      
+      // Pre-warm SharedPreferences instance for faster subsequent access
+      _sharedPrefsCache = await SharedPreferences.getInstance();
+      
       final auth = context.read<AuthProvider>();
       final theme = context.read<ThemeProvider>();
       final chatSettings = context.read<ChatSettingsProvider>();
-      
-      // Load with a timeout to prevent hanging
+
+      // Run initialization tasks in parallel with a SHORT timeout (3s max for ANR safety)
+      // Android ANR threshold is ~5 seconds, so we must complete well within that
       await Future.wait([
         auth.checkAuth(),
         theme.loadTheme(),
         chatSettings.loadSettings(),
-      ]).timeout(const Duration(seconds: 12), onTimeout: () {
-        debugPrint('SplashPage: Initialization timed out');
+      ]).timeout(const Duration(seconds: 3), onTimeout: () {
+        debugPrint('SplashPage: ⚠️ Initialization timed out (3s), proceeding anyway');
         return [];
       });
 
-      debugPrint('SplashPage: Initialized, waiting for delay');
-      await Future.delayed(const Duration(seconds: 5));
+      debugPrint('SplashPage: ✅ Initialization complete, navigating...');
 
       if (!mounted) return;
 
-      debugPrint('SplashPage: Navigating to next screen');
-      if (auth.isLoggedIn) {
-        // Connect SignalR for real-time messaging
-        // Connect SignalR after navigation (delayed to avoid crash)
-        Future.delayed(const Duration(seconds: 2), () {
-          try {
-            debugPrint('SplashPage: Starting deferred SignalR connection...');
-            SignalRService().connect();
-          } catch (e) {
-            debugPrint('SplashPage: SignalR connection error (non-fatal): $e');
-          }
+      // Navigate IMMEDIATELY after init - NO artificial delays!
+      _navigateBasedOnAuth(auth);
+      
+    } catch (e, stack) {
+      debugPrint('SplashPage: ❌ Initialization error: $e');
+      debugPrint('Stack: $stack');
+      if (mounted && !_hasNavigated) {
+        _navigateToFallback();
+      }
+    }
+  }
+
+  void _navigateBasedOnAuth(AuthProvider auth) {
+    if (_hasNavigated) return;
+    
+    if (auth.isLoggedIn) {
+      _hasNavigated = true;
+      
+      // Defer SignalR connection to AFTER navigation + first frame
+      // This ensures the home page renders before heavy SignalR work starts
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        // Small delay to let home page build first
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (!mounted) return;
+          _connectSignalRSafely();
         });
-        Navigator.pushReplacementNamed(context, AppRoutes.home);
-      } else {
-        final prefs = await SharedPreferences.getInstance();
-        final hasSeenWelcome = prefs.getBool('has_seen_welcome') ?? false;
-        if (!hasSeenWelcome) {
-          Navigator.pushReplacementNamed(context, AppRoutes.welcome);
-        } else {
-          Navigator.pushReplacementNamed(context, AppRoutes.login);
-        }
-      }
+      });
+      
+      Navigator.pushReplacementNamed(context, AppRoutes.home);
+    } else {
+      _navigateToWelcomeOrLogin();
+    }
+  }
+
+  void _connectSignalRSafely() {
+    try {
+      debugPrint('SplashPage: Starting deferred SignalR connection...');
+      SignalRService().connect();
     } catch (e) {
-      debugPrint('SplashPage Error: $e');
-      // Fallback navigation if something goes wrong
-      if (mounted) {
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          final hasSeenWelcome = prefs.getBool('has_seen_welcome') ?? false;
-          if (!hasSeenWelcome) {
-            Navigator.pushReplacementNamed(context, AppRoutes.welcome);
-          } else {
-            Navigator.pushReplacementNamed(context, AppRoutes.login);
-          }
-        } catch (_) {
-          Navigator.pushReplacementNamed(context, AppRoutes.welcome);
-        }
-      }
+      debugPrint('SplashPage: SignalR connection error (non-fatal): $e');
+    }
+  }
+
+  void _navigateToWelcomeOrLogin() {
+    if (_hasNavigated || !mounted) return;
+    
+    final hasSeenWelcome = _sharedPrefsCache?.getBool('has_seen_welcome') ?? false;
+    
+    _hasNavigated = true;
+    if (!hasSeenWelcome) {
+      Navigator.pushReplacementNamed(context, AppRoutes.welcome);
+    } else {
+      Navigator.pushReplacementNamed(context, AppRoutes.login);
+    }
+  }
+
+  void _navigateToFallback() {
+    if (_hasNavigated || !mounted) return;
+    _hasNavigated = true;
+    
+    final prefs = _sharedPrefsCache;
+    final hasSeenWelcome = prefs?.getBool('has_seen_welcome') ?? false;
+    
+    if (!hasSeenWelcome) {
+      Navigator.pushReplacementNamed(context, AppRoutes.welcome);
+    } else {
+      Navigator.pushReplacementNamed(context, AppRoutes.login);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('SplashPage: build called');
+    // This builds IMMEDIATELY - no async work here!
     return Material(
       color: Colors.white,
       child: Scaffold(
@@ -171,5 +218,15 @@ class _SplashPageState extends State<SplashPage> {
         ),
       ),
     );
+  }
+}
+
+/// Lightweight async wrapper for SharedPreferences when cache isn't ready
+class SharedPreferencesAsync {
+  Future<SharedPreferences> get _instance => SharedPreferences.getInstance();
+  
+  Future<bool> getBool(String key, {bool defaultValue = false}) async {
+    final prefs = await _instance;
+    return prefs.getBool(key) ?? defaultValue;
   }
 }

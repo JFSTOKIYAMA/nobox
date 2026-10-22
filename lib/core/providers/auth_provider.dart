@@ -5,6 +5,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'dart:async'; // for unawaited
+
 import '../services/auth_service.dart';
 import '../model/api_response.dart';
 import '../model/login_request.dart';
@@ -23,6 +25,7 @@ class AuthProvider with ChangeNotifier {
   String? _currentUser;
   bool _isLoading = true;
   bool _isAuthenticating = false;
+  bool _disposed = false;
 
   final AuthService _authService = AuthService();
   String? _token;
@@ -33,6 +36,14 @@ class AuthProvider with ChangeNotifier {
 
   AuthProvider() {
     ApiClient().onUnauthorized = logout;
+  }
+
+  bool get mounted => !_disposed;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 
   // Kunci SharedPreferences (hanya untuk data yang tidak sensitif)
@@ -66,43 +77,86 @@ class AuthProvider with ChangeNotifier {
   // FITUR: Cek Status Autentikasi
   // FUNGSI: Memeriksa apakah user sudah login atau belum saat aplikasi pertama dibuka
   // [ACTION: AUTH_CHECK] - Memeriksa token saat aplikasi pertama kali dibuka
+  // OPTIMIZED: Non-blocking, fast-path for startup. Silent re-login DEFERRED.
   Future<void> checkAuth() async {
     final prefs = await SharedPreferences.getInstance();
-    _currentUser = prefs.getString(_userEmailKey);
     
-    // Baca token secara aman (fallback ke SharedPreferences jika keystore error)
-    _token = await _safeRead(_secureTokenKey, prefs);
+    // FAST PATH: Read all needed values in parallel
+    final futures = <Future<String?>>[
+      Future.value(prefs.getString(_userEmailKey)),
+      _safeRead(_secureTokenKey, prefs),
+      _safeRead(AppConfig.lastUsernameKey, prefs),
+      _safeRead(AppConfig.lastPasswordKey, prefs),
+    ];
     
-    // Pastikan _currentUser terisi jika token ada
-    if (_token != null && _currentUser == null) {
-      _currentUser = await _safeRead(AppConfig.lastUsernameKey, prefs);
-    }
+    final results = await Future.wait(futures);
     
-    // Jika tidak ada token tapi ada saved credentials → silent re-login
-    if (_token == null) {
-      final savedUsername = await _safeRead(AppConfig.lastUsernameKey, prefs);
-      final savedPassword = await _safeRead(AppConfig.lastPasswordKey, prefs);
-      if (savedUsername != null && savedPassword != null) {
-        debugPrint('AuthProvider: No token but credentials found, attempting silent re-login...');
-        final result = await tryAutoReLogin();
-        if (result) {
-          debugPrint('AuthProvider: ✅ Silent re-login successful in checkAuth');
-        } else {
-          debugPrint('AuthProvider: ❌ Silent re-login failed in checkAuth');
-          _currentUser = null;
-        }
-      } else {
-        _currentUser = null;
-      }
-    }
+    final String? currentUser = results[0];
+    final String? token = results[1];
+    final String? savedUsername = results[2];
+    final String? savedPassword = results[3];
 
-    // Pulihkan token di AuthService/ApiClient jika ada
+    _currentUser = currentUser;
+    _token = token;
+
+    // If token exists, restore it immediately (no network call)
     if (_token != null) {
-      ApiClient().setToken(_token);
+      if (_currentUser == null) {
+        _currentUser = savedUsername;
+      }
+      ApiClient().setToken(_token!);
+      _isLoading = false;
+      notifyListeners();
+      debugPrint('AuthProvider: ✅ Fast auth restore (token found)');
+      return;
     }
 
+    // NO TOKEN: Don't block startup with silent re-login!
+    // Defer it to background after splash navigates
+    _currentUser = null;
     _isLoading = false;
     notifyListeners();
+    
+    // Schedule deferred silent re-login (non-blocking)
+    if (savedUsername != null && savedPassword != null) {
+      debugPrint('AuthProvider: ⏳ Deferring silent re-login to background');
+      unawaited(_tryDeferredAutoReLogin(savedUsername, savedPassword));
+    } else {
+      debugPrint('AuthProvider: No credentials, staying logged out');
+    }
+  }
+
+  /// Background silent re-login - doesn't block startup
+  Future<void> _tryDeferredAutoReLogin(String username, String password) async {
+    try {
+      await Future.delayed(const Duration(milliseconds: 500)); // Let UI settle first
+      if (!mounted) return; // Check if provider still alive
+      
+      final response = await _authService.login(
+        LoginRequest(username: username, password: password),
+      );
+
+      if (!response.isError && response.data != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_userEmailKey, username);
+        try {
+          await _secureStorage.write(key: _secureTokenKey, value: response.data!);
+        } catch (e) {
+          debugPrint('AuthProvider: SecureStorage write token error: $e');
+        }
+        await prefs.setString(_secureTokenKey, response.data!);
+        
+        _currentUser = username;
+        _token = response.data;
+        ApiClient().setToken(_token);
+        notifyListeners();
+        debugPrint('AuthProvider: ✅ Deferred silent re-login successful');
+      } else {
+        debugPrint('AuthProvider: ❌ Deferred silent re-login failed: ${response.error}');
+      }
+    } catch (e) {
+      debugPrint('AuthProvider: ❌ Deferred silent re-login error: $e');
+    }
   }
 
   Future<String?> getRememberedEmail() async {

@@ -6,7 +6,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../app_config.dart';
 import 'push_notification_service.dart';
-import 'api_client.dart';
 
 // =====================================================================
 // FITUR: Layanan SignalR (Real-time / WebSocket)
@@ -82,6 +81,7 @@ class SignalRService {
   /// Hubungkan ke SignalR hub menggunakan token autentikasi pengguna.
   // FITUR 3: Terhubung ke server hub SignalR menggunakan Token JWT.
   // [ACTION: SIGNALR_CONNECT] - Membangun dan menjaga koneksi Web-Socket real-time
+  // OPTIMIZED: Non-blocking, cached token, reduced main-thread work
   Future<void> connect() async {
     if (_hubConnection != null) {
       if (_hubConnection!.state == HubConnectionState.Connected) {
@@ -98,7 +98,7 @@ class SignalRService {
           _connectionStateController.add(true);
           debugPrint('SignalR: ✅ Reconnected successfully!');
           // CRITICAL: Re-subscribe setelah reconnect
-          await _subscribeUser();
+          unawaited(_subscribeUser());
           return;
         } catch (e) {
           debugPrint(
@@ -112,33 +112,13 @@ class SignalRService {
     try {
       debugPrint('SignalR: Connecting to ${AppConfig.signalRUrl}...');
 
+      // Use cached token factory to avoid repeated SecureStorage reads
       _hubConnection = HubConnectionBuilder()
           .withUrl(
             AppConfig.signalRUrl,
             options: HttpConnectionOptions(
               requestTimeout: 30000,
-              accessTokenFactory: () async {
-                // Always read fresh token (handles token refresh/expiry)
-                // FIX: Gunakan fallback ke SharedPreferences untuk mengatasi bug SecureStorage di OS tertentu
-                String? token;
-                try {
-                  const storage = FlutterSecureStorage();
-                  token = await storage.read(key: AppConfig.tokenKey);
-                } catch (e) {
-                  debugPrint('SignalR: SecureStorage read error: $e');
-                }
-
-                if (token == null || token.isEmpty) {
-                  final prefs = await SharedPreferences.getInstance();
-                  token = prefs.getString(AppConfig.tokenKey);
-                  if (token != null && token.isNotEmpty) {
-                    debugPrint(
-                      'SignalR: Token recovered from SharedPreferences fallback',
-                    );
-                  }
-                }
-                return token ?? '';
-              },
+              accessTokenFactory: _cachedTokenFactory,
             ),
           )
           .withAutomaticReconnect()
@@ -150,104 +130,31 @@ class SignalRService {
       _hubConnection!.keepAliveIntervalInMilliseconds = 15000; // 15 detik
 
       // ── Register handlers for NoBox events ──
-      debugPrint('SignalR: Registering event handlers...');
+      _registerEventHandlers();
 
-      // [ACTION: SIGNALR_RECEIVE_MSG] - Menerima balasan pesan/chat masuk secara real-time
-      _hubConnection!.on(eventTerimaPesan, (args) {
-        debugPrint(
-          'SignalR: 🔥🔥🔥 RAW TerimaPesan RECEIVED! args.length=${args?.length}',
+      // Start the connection with timeout to prevent ANR
+      final conn = _hubConnection;
+      if (conn == null) throw Exception('SignalR hubConnection is null');
+      final startFuture = conn.start();
+      if (startFuture != null) {
+        await startFuture.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw Exception('SignalR connection timeout (10s)');
+          },
         );
-        debugPrint(
-          'SignalR: 🔥 arg[0]=${args?[0]?.toString().substring(0, (args?[0]?.toString().length ?? 0) > 100 ? 100 : (args?[0]?.toString().length ?? 0))}',
-        );
-        if (args != null && args.length > 1) {
-          debugPrint(
-            'SignalR: 🔥 arg[1]=${args[1]?.toString().substring(0, (args[1]?.toString().length ?? 0) > 200 ? 200 : (args[1]?.toString().length ?? 0))}',
-          );
-        }
-        _handleTerimaPesan(args);
-      });
-
-      _hubConnection!.on(eventTerimaSubSpv, (args) {
-        debugPrint(
-          'SignalR: 🔥 RAW TerimaSubSpv RECEIVED! args.length=${args?.length}',
-        );
-        _handleTerimaSubSpv(args);
-      });
-
-      _hubConnection!.on(eventTerimaSubAgent, (args) {
-        debugPrint(
-          'SignalR: 🔥 RAW TerimaSubAgent RECEIVED! args.length=${args?.length}',
-        );
-        _handleTerimaSubSpv(args);
-      });
-
-      _hubConnection!.on(eventUcChanged, (args) {
-        debugPrint(
-          'SignalR: 🔥 RAW UcChanged RECEIVED! args.length=${args?.length}',
-        );
-        _handleUcChanged(args);
-      });
-
-      _hubConnection!.on(eventTerimaExpired, (args) {
-        debugPrint(
-          'SignalR: 🔥 RAW TerimaExpired RECEIVED! args.length=${args?.length}',
-        );
-        _handleTerimaExpired(args);
-      });
-
-      _hubConnection!.on(eventTerimaBlockUnblock, (args) {
-        debugPrint(
-          'SignalR: 🔥 RAW TerimaBlockUnblock RECEIVED! args.length=${args?.length}',
-        );
-        _handleTerimaBlockUnblock(args);
-      });
-
-      // ── Connection state handlers ──
-      _hubConnection!.onclose(({error}) {
-        debugPrint('SignalR: Connection closed. Error: $error');
-        _isConnected = false;
-        _connectionStateController.add(false);
-      });
-
-      _hubConnection!.onreconnecting(({error}) {
-        debugPrint('SignalR: Reconnecting... Error: $error');
-        _isConnected = false;
-        _connectionStateController.add(false);
-      });
-
-      _hubConnection!.onreconnected(({connectionId}) {
-        debugPrint('SignalR: Reconnected! ConnectionId: $connectionId');
-        _isConnected = true;
-        _isSubscribed = false;
-        _connectionStateController.add(true);
-        // Re-subscribe setelah reconnect (seperti project mentor)
-        _subscribeUser();
-        final currentRoom = PushNotificationService.currentRoomId;
-        if (currentRoom != null && currentRoom.isNotEmpty) {
-          joinConversation(currentRoom);
-        }
-        if (_currentJoinedRoomId != null && _currentJoinedRoomId!.isNotEmpty) {
-          joinConversation(_currentJoinedRoomId);
-        }
-      });
-
-      // Start the connection
-      await _hubConnection!.start();
+      }
       _isConnected = true;
       _connectionStateController.add(true);
       debugPrint('SignalR: ✅ Connected successfully!');
       debugPrint('SignalR: ConnectionId = ${_hubConnection!.connectionId}');
-      debugPrint('SignalR: State = ${_hubConnection!.state}');
-      debugPrint(
-        'SignalR: Listening for: $eventTerimaPesan, $eventTerimaSubSpv, $eventUcChanged, $eventTerimaExpired',
-      );
 
       // CRITICAL: Subscribe user agar server tahu harus kirim event ke koneksi ini
       // (Seperti project mentor: SubscribeUserAgent + SubscribeUserSpv)
-      await _subscribeUser();
+      // Run subscription in background, don't await
+      unawaited(_subscribeUser());
       if (_currentJoinedRoomId != null && _currentJoinedRoomId!.isNotEmpty) {
-        joinConversation(_currentJoinedRoomId);
+        unawaited(joinConversation(_currentJoinedRoomId!));
       }
     } catch (e, stack) {
       debugPrint('SignalR: ❌ Connection failed: $e');
@@ -257,12 +164,106 @@ class SignalRService {
     }
   }
 
+  /// Cached token factory - avoids repeated SecureStorage reads
+  static String? _cachedToken;
+  static DateTime? _tokenCacheTime;
+  static const _tokenCacheTtl = Duration(minutes: 5);
+
+  Future<String> _cachedTokenFactory() async {
+    // Return cached token if still valid
+    if (_cachedToken != null &&
+        _tokenCacheTime != null &&
+        DateTime.now().difference(_tokenCacheTime!) < _tokenCacheTtl) {
+      return _cachedToken!;
+    }
+
+    // Read fresh token
+    String? token;
+    try {
+      const storage = FlutterSecureStorage();
+      token = await storage.read(key: AppConfig.tokenKey);
+    } catch (e) {
+      debugPrint('SignalR: SecureStorage read error: $e');
+    }
+
+    if (token == null || token.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      token = prefs.getString(AppConfig.tokenKey);
+      if (token != null && token.isNotEmpty) {
+        debugPrint(
+          'SignalR: Token recovered from SharedPreferences fallback',
+        );
+      }
+    }
+
+    _cachedToken = token ?? '';
+    _tokenCacheTime = DateTime.now();
+    return _cachedToken!;
+  }
+
+  void _registerEventHandlers() {
+    // [ACTION: SIGNALR_RECEIVE_MSG] - Menerima balasan pesan/chat masuk secara real-time
+    _hubConnection!.on(eventTerimaPesan, (args) {
+      _handleTerimaPesan(args);
+    });
+
+    _hubConnection!.on(eventTerimaSubSpv, (args) {
+      _handleTerimaSubSpv(args);
+    });
+
+    _hubConnection!.on(eventTerimaSubAgent, (args) {
+      _handleTerimaSubSpv(args);
+    });
+
+    _hubConnection!.on(eventUcChanged, (args) {
+      _handleUcChanged(args);
+    });
+
+    _hubConnection!.on(eventTerimaExpired, (args) {
+      _handleTerimaExpired(args);
+    });
+
+    _hubConnection!.on(eventTerimaBlockUnblock, (args) {
+      _handleTerimaBlockUnblock(args);
+    });
+
+    // ── Connection state handlers ──
+    _hubConnection!.onclose(({error}) {
+      debugPrint('SignalR: Connection closed. Error: $error');
+      _isConnected = false;
+      _connectionStateController.add(false);
+    });
+
+    _hubConnection!.onreconnecting(({error}) {
+      debugPrint('SignalR: Reconnecting... Error: $error');
+      _isConnected = false;
+      _connectionStateController.add(false);
+    });
+
+    _hubConnection!.onreconnected(({connectionId}) {
+      debugPrint('SignalR: Reconnected! ConnectionId: $connectionId');
+      _isConnected = true;
+      _isSubscribed = false;
+      _connectionStateController.add(true);
+      // Re-subscribe setelah reconnect (seperti project mentor)
+      unawaited(_subscribeUser());
+      final currentRoom = PushNotificationService.currentRoomId;
+      if (currentRoom != null && currentRoom.isNotEmpty) {
+        unawaited(joinConversation(currentRoom));
+      }
+      if (_currentJoinedRoomId != null && _currentJoinedRoomId!.isNotEmpty) {
+        unawaited(joinConversation(_currentJoinedRoomId!));
+      }
+    });
+  }
+
   // ══════════════════════════════════════════════
   //  User Subscription (CRITICAL - dari project mentor)
   // ══════════════════════════════════════════════
 
   /// Mendaftarkan (subscribe) pengguna ke hub SignalR agar menerima event.
   /// Tanpa ini, server TIDAK akan mengirim TerimaPesan, TerimaSubSpv, dll.
+  // OPTIMIZED: Uses compute for JWT decoding, parallel storage reads
   Future<void> _subscribeUser() async {
     if (_hubConnection == null ||
         _hubConnection!.state != HubConnectionState.Connected) {
@@ -273,64 +274,43 @@ class SignalRService {
     try {
       const storage = FlutterSecureStorage();
 
-      // 1. Ambil userId dari JWT token
-      final token = await storage.read(key: 'auth_token');
+      // 1. Read token and tenantId in PARALLEL
+      final results = await Future.wait([
+        storage.read(key: 'auth_token'),
+        storage.read(key: 'tenant_id'),
+      ]);
+      
+      final token = results[0];
+      final tenantId = results[1];
+
       if (token == null) {
         debugPrint('SignalR: ⚠️ Cannot subscribe - no token');
         return;
       }
 
-      String userId = '1';
-      try {
-        final parts = token.split('.');
-        if (parts.length == 3) {
-          final payload = base64Url.normalize(parts[1]);
-          final decoded = utf8.decode(base64Url.decode(payload));
-          final payloadMap = jsonDecode(decoded);
-          userId =
-              payloadMap['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] ??
-              payloadMap['nameid'] ??
-              payloadMap['sub'] ??
-              '1';
-        }
-      } catch (e) {
-        debugPrint('SignalR: ⚠️ Failed to decode JWT: $e');
-      }
-
-      // 2. Ambil tenantId dari secure storage
-      final tenantId = await storage.read(key: 'tenant_id');
       if (tenantId == null || tenantId.isEmpty) {
         debugPrint(
           'SignalR: ⚠️ TenantId not available yet, subscription deferred',
         );
-        debugPrint(
-          'SignalR: ⚠️ Will be called via trySubscribe() when ChatService loads accounts',
-        );
         return;
       }
+
+      // 2. Decode JWT on background isolate to avoid blocking main thread
+      final userId = await compute(_extractUserIdFromToken, token);
 
       debugPrint(
         'SignalR: 📡 Subscribing user - UserId: $userId, TenantId: $tenantId',
       );
 
-      // 3. Subscribe sebagai Agent (untuk pesan & room yang di-assign ke agent ini)
-      try {
-        await _hubConnection!.invoke(
-          'SubscribeUserAgent',
-          args: [userId, tenantId],
-        );
-        debugPrint('SignalR: ✅ Subscribed as Agent');
-      } catch (e) {
-        debugPrint('SignalR: ❌ SubscribeUserAgent failed: $e');
-      }
-
-      // 4. Subscribe sebagai Supervisor (untuk SEMUA room di tenant)
-      try {
-        await _hubConnection!.invoke('SubscribeUserSpv', args: [tenantId]);
-        debugPrint('SignalR: ✅ Subscribed as Supervisor');
-      } catch (e) {
-        debugPrint('SignalR: ⚠️ SubscribeUserSpv failed: $e');
-      }
+      // 3. Subscribe as Agent & Supervisor in PARALLEL
+      await Future.wait([
+        _hubConnection!.invoke('SubscribeUserAgent', args: [userId, tenantId])
+            .then((_) => debugPrint('SignalR: ✅ Subscribed as Agent'))
+            .catchError((e) => debugPrint('SignalR: ❌ SubscribeUserAgent failed: $e')),
+        _hubConnection!.invoke('SubscribeUserSpv', args: [tenantId])
+            .then((_) => debugPrint('SignalR: ✅ Subscribed as Supervisor'))
+            .catchError((e) => debugPrint('SignalR: ⚠️ SubscribeUserSpv failed: $e')),
+      ]);
 
       _isSubscribed = true;
       debugPrint(
@@ -339,6 +319,25 @@ class SignalRService {
     } catch (e) {
       debugPrint('SignalR: ❌ Subscription failed: $e');
     }
+  }
+
+  /// Extract userId from JWT token - runs on background isolate via compute()
+  static String _extractUserIdFromToken(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length == 3) {
+        final payload = base64Url.normalize(parts[1]);
+        final decoded = utf8.decode(base64Url.decode(payload));
+        final payloadMap = jsonDecode(decoded);
+        return payloadMap['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] ??
+               payloadMap['nameid'] ??
+               payloadMap['sub'] ??
+               '1';
+      }
+    } catch (e) {
+      debugPrint('SignalR: ⚠️ Failed to decode JWT: $e');
+    }
+    return '1';
   }
 
   /// Public method: dipanggil dari ChatService setelah tenantId tersedia.
@@ -353,7 +352,7 @@ class SignalRService {
       return;
     }
     debugPrint('SignalR: 🔄 trySubscribe called - attempting subscription...');
-    await _subscribeUser();
+    unawaited(_subscribeUser());
   }
 
   // ══════════════════════════════════════════════
@@ -603,7 +602,6 @@ class SignalRService {
           roomData['Ct']?.toString() ??
           roomData['Grp']?.toString() ??
           'Pesan Baru';
-      final agentId = roomData['AgentId'];
       final upBy = roomData['UpBy'];
 
       // Skip jika unread count = 0 (bukan pesan masuk baru, mungkin update status saja)

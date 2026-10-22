@@ -1088,7 +1088,10 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       debugPrint('chat.accountId: ${chat.accountId}');
       debugPrint('isTelegram    : $isTelegram');
       final initialTake = (chat.unreadCount > 75)
-          ? (chat.unreadCount + 10)
+          // ANR FIX: jangan memuat ribuan pesan sekaligus saat unreadCount
+          // sangat besar. Pesan lama tetap bisa dimuat lewat pagination
+          // ketika pengguna scroll ke atas.
+          ? (chat.unreadCount + 10).clamp(75, 200).toInt()
           : 75;
       final response = await _chatService.getMessageHistory(
         chat.id,
@@ -2152,7 +2155,10 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   void _startChatSyncPolling() {
     debugPrint('ChatSync: Started polling timer.');
     _ackPollTimer?.cancel();
-    _ackPollTimer = Timer.periodic(const Duration(milliseconds: 2500), (timer) async {
+    // PERF: 2.5 detik terlalu agresif (24 request/menit per room). SignalR
+    // sudah menangani pesan real-time, polling ini hanya jaring pengaman
+    // untuk sinkronisasi ID/ack, jadi 6 detik sudah cukup.
+    _ackPollTimer = Timer.periodic(const Duration(milliseconds: 6000), (timer) async {
       if (!mounted) {
         timer.cancel();
         return;

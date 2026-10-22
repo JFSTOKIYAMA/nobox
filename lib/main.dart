@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -27,8 +28,18 @@ import 'presentation/screens/home/responsive_chat_home.dart';
 import 'core/model/message.dart';
 
 void main() {
-  debugPrint('App: main started');
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ANR FIX: Pada mode release, debugPrint() menulis log secara SINKRON ke
+  // logcat. Log payload besar (JSON conversation, isi pesan, media) dapat
+  // memblokir UI thread cukup lama sehingga Android menampilkan dialog
+  // "Aplikasi tidak merespons". Matikan log di release; debug/profile tetap
+  // menampilkan log lengkap untuk keperluan development.
+  if (kReleaseMode) {
+    debugPrint = (String? message, {int? wrapWidth}) {};
+  }
+
+  debugPrint('App: main started');
   
   try {
     runApp(

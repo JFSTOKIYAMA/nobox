@@ -25,6 +25,25 @@ class ChatProvider with ChangeNotifier {
   String? _fetchError;
   Timer? _signalRRefreshTimer;
 
+  // ANR/perf: penulisan SharedPreferences di-debounce agar tidak menulis
+  // berulang-ulang (per item chat) saat fetch/refresh.
+  Timer? _saveReadDebounce;
+  Timer? _savePinnedDebounce;
+  Timer? _saveArchivedDebounce;
+
+  // ANR FIX: Batch notifyListeners to prevent UI freeze when multiple
+  // SignalR events arrive rapidly (e.g., message burst).
+  Timer? _notifyDebounce;
+  bool _pendingNotify = false;
+
+  // Cache waktu terakhir reference data (funnels/tags/agents/links/accounts/
+  // contacts) diambil. Data ini tidak perlu di-fetch ulang setiap polling.
+  DateTime? _lastReferenceDataFetch;
+
+  // Guard agar refreshFirstPage tidak berjalan bertumpuk (mis. banyak event
+  // SignalR datang bersamaan) yang bisa membuat UI sibuk dan terasa freeze.
+  bool _isRefreshingFirstPage = false;
+
   // Pagination state
   static const int _pageSize = 100;
   int _currentSkip = 0;
@@ -61,6 +80,24 @@ class ChatProvider with ChangeNotifier {
 
   // Request tracking untuk mencegah race condition saat ganti tab cepat
   int _fetchGeneration = 0;
+
+  /// Debounced notifyListeners to batch rapid updates (ANR prevention)
+  /// Call this instead of notifyListeners() in hot paths (SignalR handlers, etc.)
+  void _notifyDebounced() {
+    if (_isDisposed) return;
+    if (_pendingNotify) return; // Already scheduled
+    
+    _pendingNotify = true;
+    _notifyDebounce?.cancel();
+    _notifyDebounce = Timer(const Duration(milliseconds: 16), () { // ~1 frame
+      if (!_isDisposed) {
+        _pendingNotify = false;
+        notifyListeners();
+      }
+    });
+  }
+
+  
 
   // FIX: Unread Override Shield
   // Backend kadang mereturn UnreadCount = 0 pada API/SignalR jika aplikasi sedang berjalan di foreground,
@@ -552,18 +589,32 @@ class ChatProvider with ChangeNotifier {
       // Muat state lokal yang tersimpan terlebih dahulu
       await _loadPersistedState();
 
-      // Fetch funnels and tags proactively in the background for mapping
-      // We explicitly await them here to ensure they format correctly immediately
       // Pre-fetch semua reference data yang dibutuhkan untuk
-      // client-side ID-to-name resolution (Jalur 2 filters)
-      await Future.wait([
-        getFunnels(),
-        getTags(),
-        getCachedAgents(),
-        getCachedLinks(),
-        getCachedAccounts(), // FIX: Fetch accounts untuk resolusi channel type (ChId → Code)
-        getContactsResponse(),
-      ]);
+      // client-side ID-to-name resolution (Jalur 2 filters).
+      //
+      // PERF: sebelumnya 6 request ini dijalankan pada SETIAP refresh
+      // (polling 60 detik, reconnect, resume). Sekarang dibatasi maksimal
+      // sekali per 5 menit karena datanya jarang berubah.
+      final now = DateTime.now();
+      final needReferenceData =
+          _lastReferenceDataFetch == null ||
+          now.difference(_lastReferenceDataFetch!).inMinutes >= 5;
+      if (needReferenceData) {
+        _lastReferenceDataFetch = now;
+        try {
+          await Future.wait([
+            getFunnels(),
+            getTags(),
+            getCachedAgents(),
+            getCachedLinks(),
+            getCachedAccounts(), // FIX: Fetch accounts untuk resolusi channel type (ChId → Code)
+            getContactsResponse(),
+          ]);
+        } catch (e) {
+          // Jangan gagalkan pemuatan daftar chat hanya karena reference data error.
+          debugPrint('ChatProvider: reference data prefetch failed: $e');
+        }
+      }
 
       // Tentukan status mana yang akan diminta dari server
       final statusCode = _statusCodeForFilter(_activeFilter);
@@ -1490,7 +1541,7 @@ class ChatProvider with ChangeNotifier {
       debugPrint(
         'ChatProvider: 🏠 Updated room $roomId from SignalR | lastMsg=$lastMsg | uc=$uc',
       );
-      notifyListeners();
+      _notifyDebounced(); // ANR FIX: Batch rapid SignalR updates
     } else {
       // Room not in current list — trigger a full refresh to pick it up
       debugPrint(
@@ -1620,7 +1671,7 @@ class ChatProvider with ChangeNotifier {
         );
       }
 
-      notifyListeners();
+      _notifyDebounced(); // ANR FIX: Batch rapid SignalR updates
     }
     
     // Sesuai arahan Mas Erik: Hapus background refresh API (yang dulu dibuat dengan delay 5 detik).
@@ -1804,15 +1855,16 @@ class ChatProvider with ChangeNotifier {
       _overrideTimestamps[roomId] = DateTime.now().toUtc().toIso8601String();
       _saveLocalOverrides();
 
-      if (updateTimeAndPosition) {
-        // Pindahkan obrolan ke posisi paling atas
+      if (updateTimeAndPosition && !chat.isPinned) {
+        // Pindahkan obrolan ke posisi paling atas (hanya untuk chat yang TIDAK di-pin)
+        // Chat yang di-pin posisinya diatur oleh getter sortedChats via _pinnedIds, bukan oleh posisi di _chats raw.
         _chats.removeAt(index);
         _chats.insert(0, chat);
       } else {
-        // Hanya update di tempat, tapi waktu bisa mundur (misal saat hapus pesan)
+        // Update di tempat:
+        // - Jika isPinned: jangan pindah posisi agar urutan pin tidak berubah saat ada pesan baru.
+        // - Jika !updateTimeAndPosition: misal saat hapus pesan, waktu bisa mundur.
         _chats[index] = chat;
-        // FIX: Hapus _chats.sort() di sini karena melakukan parsing waktu pada ribuan list akan memicu ANR / Freeze.
-        // Posisi akan diperbaiki secara alami saat SignalR atau polling API berikutnya berjalan.
       }
 
       _saveLocalOverrides();
@@ -1823,7 +1875,8 @@ class ChatProvider with ChangeNotifier {
   /// Hanya merefresh halaman pertama percakapan tanpa mereset pagination.
   /// Digunakan oleh SignalR dan polling untuk memperbarui data tanpa merusak scroll tanpa batas.
   Future<void> refreshFirstPage({int? customStatusCode, bool showLoading = false}) async {
-    if (_isLoading || _isLoadingMore) return;
+    if (_isLoading || _isLoadingMore || _isRefreshingFirstPage) return;
+    _isRefreshingFirstPage = true;
 
     if (showLoading) {
       _isLoading = true;
@@ -2294,6 +2347,12 @@ class ChatProvider with ChangeNotifier {
       }
     } catch (e) {
       debugPrint('ChatProvider: refreshFirstPage error: $e');
+    } finally {
+      _isRefreshingFirstPage = false;
+      if (showLoading && _isLoading) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -2534,19 +2593,42 @@ class ChatProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _savePinnedState() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_pinnedKey, jsonEncode(_pinnedIds.toList()));
+  // PERF: Debounce penulisan state agar tidak terjadi banyak write
+  // SharedPreferences dalam satu frame (mis. saat iterasi daftar chat).
+  void _savePinnedState() {
+    _savePinnedDebounce?.cancel();
+    _savePinnedDebounce = Timer(const Duration(milliseconds: 400), () async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_pinnedKey, jsonEncode(_pinnedIds.toList()));
+      } catch (e) {
+        debugPrint('ChatProvider: Failed to save pinned state: $e');
+      }
+    });
   }
 
-  Future<void> _saveArchivedState() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_archivedKey, jsonEncode(_archivedIds.toList()));
+  void _saveArchivedState() {
+    _saveArchivedDebounce?.cancel();
+    _saveArchivedDebounce = Timer(const Duration(milliseconds: 400), () async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_archivedKey, jsonEncode(_archivedIds.toList()));
+      } catch (e) {
+        debugPrint('ChatProvider: Failed to save archived state: $e');
+      }
+    });
   }
 
-  Future<void> _saveReadState() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_readKey, jsonEncode(_readIds.toList()));
+  void _saveReadState() {
+    _saveReadDebounce?.cancel();
+    _saveReadDebounce = Timer(const Duration(milliseconds: 400), () async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_readKey, jsonEncode(_readIds.toList()));
+      } catch (e) {
+        debugPrint('ChatProvider: Failed to save read state: $e');
+      }
+    });
   }
 
   Future<void> _saveStarredState() async {
@@ -4097,28 +4179,14 @@ class ChatProvider with ChangeNotifier {
     return matched['Name']?.toString() ?? matched['Nm']?.toString();
   }
 
-  /// Resolves HumanAgent ID → display name menggunakan [_cachedAgents].
-  /// Cek field 'Id' dan 'UserId' untuk handle inkonsistensi backend.
-  String? _resolveAgentName(String id) {
-    if (_cachedAgents == null) return null;
-    final matched = _cachedAgents!.firstWhere(
-      (a) => a['Id']?.toString() == id || a['UserId']?.toString() == id,
-      orElse: () => <String, dynamic>{},
-    );
-    return matched['DisplayName']?.toString() ??
-        matched['Name']?.toString() ??
-        matched['Nm']?.toString();
-  }
-
-  /// Resolves Link ID → template/display name menggunakan [_cachedLinks].
-  String? _resolveLinkName(String id) {
-    if (_cachedLinks == null) return null;
-    final matched = _cachedLinks!.firstWhere(
-      (l) => l['Id']?.toString() == id,
-      orElse: () => <String, dynamic>{},
-    );
-    return matched['Nm']?.toString() ??
-        matched['Name']?.toString() ??
-        matched['LinkTmp']?.toString();
+  @override
+  void dispose() {
+    _notifyDebounce?.cancel();
+    _saveReadDebounce?.cancel();
+    _savePinnedDebounce?.cancel();
+    _saveArchivedDebounce?.cancel();
+    _signalRRefreshTimer?.cancel();
+    _isDisposed = true;
+    super.dispose();
   }
 }

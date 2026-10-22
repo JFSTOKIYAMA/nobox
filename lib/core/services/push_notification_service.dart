@@ -229,35 +229,13 @@ class PushNotificationService {
   static Future<void> _handleForegroundMessage(RemoteMessage message) async {
     final data = message.data;
     final roomId = data['roomId'];
-    final roomName = data['roomName'] ?? 'Chat';
-    final senderName = data['senderName'] ?? 'Someone';
-    final messageText = data['message'] ?? 'New message';
 
     if (_currentRoomId != null && _currentRoomId == roomId) return;
 
     if (roomId != null) {
-      String actualSenderName = senderName;
-      String? profileImage;
-      try {
-        final roomInfo = await _getRoomDetailForNotification(roomId);
-        if (roomInfo != null) {
-          actualSenderName = roomInfo['name'] ?? senderName;
-          profileImage = roomInfo['image'];
-        }
-      } catch (e) {
-        debugPrint('⚠️ Detail error: $e');
-      }
-
-      // 🔕 FIX DOUBLE NOTIFICATION: Dihapus karena jika aplikasi dalam state Foreground,
-      // SignalR sudah pasti menangkap event ReceiveMessage dan men-trigger notifikasinya.
-      // Jika dibiarkan, akan terjadi notifikasi ganda antara FCM dan SignalR!
-      /* await showChatNotification(
-        roomId: roomId,
-        roomName: roomName,
-        senderName: actualSenderName,
-        message: messageText,
-        profileImageUrl: profileImage,
-      ); */
+      // 🔕 FIX DOUBLE NOTIFICATION: Disabled because SignalR already handles
+      // ReceiveMessage and triggers notifications in foreground.
+      // Keeping this would cause duplicate notifications (FCM + SignalR).
     }
   }
 
@@ -271,27 +249,14 @@ class PushNotificationService {
     }
   }
 
-  static Future<Map<String, String?>?> _getRoomDetailForNotification(String roomId) async {
-    try {
-      final response = await ApiClient().post(
-        'Services/Chat/Chatrooms/DetailRoom',
-        data: {'EntityId': roomId},
-      );
-
-      if (response.statusCode == 200 && response.data['IsError'] != true) {
-        final roomData = response.data['Data']['Room'];
-        final contactName = roomData['CtRealNm'] ?? roomData['Ct'] ?? roomData['Grp'] ?? roomData['Name'];
-        final profileImage = roomData['CtImg'] ?? roomData['LinkImg'];
-        
-        return {'name': contactName, 'image': profileImage};
-      }
-    } catch (e) {
-      debugPrint('❌ Error fetching room detail: $e');
-    }
-    return null;
+  static Future<String?> _downloadAndSaveImage(String url) async {
+    // Download image asynchronously (non-blocking) - no need for isolate
+    // since this is already async and runs on a background thread pool
+    return _downloadAndSaveImageFallback(url);
   }
 
-  static Future<String?> _downloadAndSaveImage(String url) async {
+  /// Download and save image for notification - runs async on background thread
+  static Future<String?> _downloadAndSaveImageFallback(String url) async {
     try {
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
@@ -343,7 +308,6 @@ class PushNotificationService {
         }
       }
 
-      final messages = _notificationMessages[roomId]!;
       final bigTextStyle = BigTextStyleInformation(
         message,
         htmlFormatBigText: true,

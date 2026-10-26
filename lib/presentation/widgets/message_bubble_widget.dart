@@ -543,6 +543,12 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
   }
 
   Widget _buildMessageContent(BuildContext context, bool isMe, bool isDarkMode) {
+    // Issue 4: pesan edit/protocol/document(empty)/file kosong → render miring redup
+    if (isUnsupportedWhatsAppContent(widget.message.content) ||
+        widget.message.content == kUnsupportedWhatsAppLabel) {
+      return _buildUnsupportedMessage(isMe, isDarkMode);
+    }
+
     if (_isLocationMessage(widget.message.content)) {
       return _buildLocationMessage(isMe, isDarkMode);
     }
@@ -585,6 +591,23 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
     if (url.isEmpty) return false;
     const videoExts = ['.mp4', '.mov', '.avi', '.mkv', '.3gp'];
     return videoExts.any((ext) => url.contains(ext));
+  }
+
+  Widget _buildUnsupportedMessage(bool isMe, bool isDarkMode) {
+    final textColor = isDarkMode
+        ? AppTheme.darkTextSecondary.withOpacity(0.8)
+        : Colors.grey.shade600;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      child: Text(
+        kUnsupportedWhatsAppLabel,
+        style: TextStyle(
+          fontSize: 13,
+          color: textColor,
+          fontStyle: FontStyle.italic,
+        ),
+      ),
+    );
   }
 
   Widget _buildTextMessage(bool isMe, bool isDarkMode) {

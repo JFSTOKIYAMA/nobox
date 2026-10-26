@@ -820,7 +820,8 @@ class _ChatListPageState extends State<ChatListPage>
                 }
 
                 return RefreshIndicator(
-                  onRefresh: () => chatProvider.fetchChats(),
+                  onRefresh: () =>
+                      chatProvider.refreshFirstPage(showLoading: false),
                   child: ListView.builder(
                     controller: _scrollController,
                     padding: EdgeInsets.zero,
@@ -1474,7 +1475,38 @@ class _ChatListPageState extends State<ChatListPage>
               'Email',
               'Phone',
             ]);
-            final contactNames = _toUniqueNames(contacts, [
+            // FILTER KONTAK BERDASARKAN CHANNEL YANG DIPILIH:
+            // Kontak hanya muncul jika memiliki LeadLinks/Channel yang cocok dengan channel terpilih.
+            List<Map<String, dynamic>> filteredContacts = contacts;
+            if (selectedChannelId != null) {
+              filteredContacts = contacts.where((ct) {
+                final leadLinks = ct['LeadLinks'];
+                if (leadLinks is List && leadLinks.isNotEmpty) {
+                  for (final l in leadLinks) {
+                    if (l is Map) {
+                      final lChId = (l['ChId'] ??
+                              l['Ch'] ??
+                              l['ChannelId'] ??
+                              l['chId'])
+                          ?.toString();
+                      if (lChId != null &&
+                          lChId.isNotEmpty &&
+                          lChId == selectedChannelId) {
+                        return true;
+                      }
+                    }
+                  }
+                  return false;
+                }
+                final ctChId = (ct['Channel'] ??
+                        ct['ChId'] ??
+                        ct['ChannelId'] ??
+                        ct['chId'])
+                    ?.toString();
+                return ctChId != null && ctChId == selectedChannelId;
+              }).toList();
+            }
+            final contactNames = _toUniqueNames(filteredContacts, [
               'Name',
               'CtNm',
               'CtRealNm',
@@ -1611,6 +1643,7 @@ class _ChatListPageState extends State<ChatListPage>
                               selectedChannel = val;
                               selectedAccount = null;
                               selectedGroup = null;
+                              selectedContact = null;
                             });
                           },
                         ),
@@ -1766,6 +1799,10 @@ class _ChatListPageState extends State<ChatListPage>
                             (val) {
                               setDialogState(() => selectedContact = val);
                             },
+                            enabled: selectedChannel != null,
+                            hintText: selectedChannel == null
+                                ? 'Select Channel first'
+                                : (contactNames.isEmpty ? 'No contacts for this channel' : '--select--'),
                           )
                         else if (selectedTo == 'Manual')
                           Padding(
@@ -2022,8 +2059,8 @@ class _ChatListPageState extends State<ChatListPage>
                                       final idx = contactNames.indexOf(
                                         selectedContact!,
                                       );
-                                      if (idx >= 0 && idx < contacts.length) {
-                                        final contact = contacts[idx];
+                                      if (idx >= 0 && idx < filteredContacts.length) {
+                                        final contact = filteredContacts[idx];
                                         debugPrint('ChatList: Selected Contact RAW: $contact');
                                         receiver = (contact['Id'] ?? contact['id'])?.toString();
                                         contactId = int.tryParse(receiver ?? '');
@@ -2063,15 +2100,18 @@ class _ChatListPageState extends State<ChatListPage>
                                               }
                                             }
                                           }
-                                          targetLink ??= (leadLinks[0] is Map
-                                              ? leadLinks[0]
-                                              : null);
                                           if (targetLink != null) {
                                             linkId = int.tryParse(
                                               targetLink['Id']?.toString() ??
                                                   targetLink['id']?.toString() ??
                                                   '',
                                             );
+                                          } else {
+                                            showValidationToast(
+                                              'Kontak Tidak Terdaftar',
+                                              'Kontak ini tidak terdaftar pada channel yang dipilih. Silakan pilih kontak lain atau gunakan opsi input Manual.',
+                                            );
+                                            return;
                                           }
                                         }
                                       }
@@ -2084,7 +2124,7 @@ class _ChatListPageState extends State<ChatListPage>
                                     }
                                   }
 
-                                  if (receiver == null || receiver!.isEmpty) {
+                                  if (receiver == null || receiver.isEmpty) {
                                     showValidationToast(
                                       'Kolom Belum Lengkap!',
                                       'Silakan periksa kembali data ${isGroup ? "grup" : "penerima"} yang dipilih.',
@@ -2116,19 +2156,94 @@ class _ChatListPageState extends State<ChatListPage>
 
                                     // Muat ulang daftar chat dan navigasikan layar ke ruang chat yang baru dibuat
                                     if (mounted) {
-                                      // Sesuai kode mentor: Jeda statis lalu fetch ulang paksa
-                                      final isManual = manualInput.isNotEmpty;
-                                      final delayDuration = isManual
-                                          ? const Duration(seconds: 2)
-                                          : const Duration(milliseconds: 1500);
+                                      // Tanpa jeda & tanpa fetch ulang: bangun ChatModel optimistik
+                                      // dari data form + roomId, sisipkan ke daftar lokal, lalu
+                                      // langsung navigasi (target <500ms). Sinkronisasi dilakukan
+                                      // di latar belakang tanpa menghambat navigasi.
+                                      final String newRoomIdStr =
+                                          result['roomId']?.toString() ?? '';
 
-                                      await Future.delayed(delayDuration);
-                                      await context
+                                      final resolvedCtId =
+                                          result['contactId']?.toString() ??
+                                          (contactId?.toString() ?? '');
+                                      final resolvedLinkId =
+                                          result['linkId']?.toString() ??
+                                          (linkId?.toString() ?? '');
+                                      final resolvedAccId =
+                                          result['accountId']?.toString() ??
+                                          accountIdInt.toString();
+                                      final resolvedCtRealId =
+                                          result['ctRealId']?.toString() ??
+                                          receiver;
+
+                                      final String resolvedSender = isGroup
+                                          ? (groupName?.isNotEmpty == true
+                                              ? groupName!
+                                              : (selectedGroup?.isNotEmpty == true
+                                                  ? selectedGroup!
+                                                  : (manualInput.isNotEmpty
+                                                      ? manualInput
+                                                      : 'Group')))
+                                          : (selectedContact?.isNotEmpty == true
+                                              ? selectedContact!
+                                              : (manualInput.isNotEmpty
+                                                  ? manualInput
+                                                  : 'New Chat'));
+
+                                      final newChat = ChatModel(
+                                        id: newRoomIdStr,
+                                        contactId: isGroup
+                                            ? ''
+                                            : (resolvedCtId.isNotEmpty
+                                                ? resolvedCtId
+                                                : receiver),
+                                        sender: resolvedSender,
+                                        lastMessage: '',
+                                        time: DateTime.now().toIso8601String(),
+                                        unreadCount: 0,
+                                        status: 'Unassigned',
+                                        agentName: '',
+                                        tags: [],
+                                        avatarUrl: null,
+                                        lastMessageType: null,
+                                        channelName:
+                                            selectedAccount?.isNotEmpty == true
+                                                ? selectedAccount!
+                                                : (selectedChannel ?? ''),
+                                        channelType: selectedChannel ?? '',
+                                        isPinned: false,
+                                        isArchived: false,
+                                        chId: channelIdInt.toString(),
+                                        funnel: '',
+                                        isGroup: isGroup,
+                                        isBlocked: false,
+                                        isLastMessageFromMe: true,
+                                        needReply: false,
+                                        accountId: resolvedAccId,
+                                        ctRealId: resolvedCtRealId,
+                                        link: resolvedLinkId,
+                                        campaign: '',
+                                        deal: '',
+                                        groupName: isGroup
+                                            ? (groupName?.isNotEmpty == true
+                                                ? groupName!
+                                                : (selectedGroup?.isNotEmpty == true
+                                                    ? selectedGroup!
+                                                    : (manualInput.isNotEmpty
+                                                        ? manualInput
+                                                        : 'Group')))
+                                            : '',
+                                        groupId: isGroup
+                                            ? (groupId?.toString() ?? receiver)
+                                            : '',
+                                      );
+
+                                      context
                                           .read<ChatProvider>()
-                                          .fetchChats();
+                                          .insertLocalChat(newChat);
 
-                                      if (mounted &&
-                                          _scrollController.hasClients) {
+                                      // Scroll ke atas agar chat baru tampak di posisi teratas.
+                                      if (_scrollController.hasClients) {
                                         _scrollController.animateTo(
                                           0,
                                           duration: const Duration(
@@ -2138,216 +2253,6 @@ class _ChatListPageState extends State<ChatListPage>
                                         );
                                       }
 
-                                      final chats = context
-                                          .read<ChatProvider>()
-                                          .chats;
-                                      
-                                      // Cari chat yang sesuai dengan tujuan yang dipilih pengguna.
-                                      String? newRoomIdStr = result['roomId']
-                                          ?.toString();
-                                      ChatModel? newChat;
-                                      try {
-                                        newChat = chats.firstWhere((c) {
-                                          if (newRoomIdStr != null &&
-                                              newRoomIdStr.isNotEmpty &&
-                                              c.id == newRoomIdStr)
-                                            return true;
-
-                                          // Validasi agar tepat sasaran ke kamar channel yang dipilih
-                                          bool isSameChannel =
-                                              c.chId == channelIdInt.toString();
-                                          if (!isSameChannel) return false;
-
-                                          if (isGroup) {
-                                            if (groupId != null &&
-                                                groupId != 0 &&
-                                                (c.groupId == groupId.toString() ||
-                                                    c.ctRealId == groupId.toString())) {
-                                              return true;
-                                            }
-                                            if (groupName != null &&
-                                                groupName.isNotEmpty &&
-                                                c.groupName.trim().toLowerCase() ==
-                                                    groupName.trim().toLowerCase()) {
-                                              return true;
-                                            }
-                                            return false;
-                                          }
-
-                                          if (linkId != null &&
-                                              linkId! > 0 &&
-                                              c.link == linkId.toString())
-                                            return true;
-                                          if (receiver != null &&
-                                              receiver!.isNotEmpty &&
-                                              (c.contactId == receiver ||
-                                                  c.ctRealId == receiver))
-                                            return true;
-                                          if (selectedContact != null &&
-                                              selectedContact!.isNotEmpty) {
-                                            final rawTarget = selectedContact!
-                                                .replaceAll(
-                                                  RegExp(r'\s*\(\d+\)$'),
-                                                  '',
-                                                )
-                                                .trim()
-                                                .toLowerCase();
-                                            if (rawTarget.isNotEmpty &&
-                                                c.sender.trim().toLowerCase() ==
-                                                    rawTarget) return true;
-                                          }
-                                          if (manualInput.isNotEmpty &&
-                                              c.sender.trim().toLowerCase() ==
-                                                  manualInput
-                                                      .trim()
-                                                      .toLowerCase())
-                                            return true;
-                                          return false;
-                                        });
-                                      } catch (e) {
-                                        // Jika tidak ditemukan di 20 list pertama karena belum ada pesan (waktu masih null di server)
-                                        String resolvedCtId =
-                                            result['contactId']?.toString() ??
-                                            (contactId?.toString() ?? '');
-                                        String resolvedLinkId =
-                                            result['linkId']?.toString() ??
-                                            (linkId?.toString() ?? '');
-                                        String resolvedAccId =
-                                            result['accountId']?.toString() ??
-                                            accountIdInt.toString();
-                                        String resolvedCtRealId =
-                                            result['ctRealId']?.toString() ??
-                                            (receiver ?? '');
-                                        String resolvedSender =
-                                            selectedContact?.isNotEmpty == true
-                                                ? selectedContact!
-                                                : (manualInput.isNotEmpty
-                                                    ? manualInput
-                                                    : 'New Chat');
-
-                                        // Jika ID masih kosong/tidak lengkap, ambil detail obrolan dari server menggunakan getDetailRoom
-                                        if (newRoomIdStr != null &&
-                                            newRoomIdStr.isNotEmpty &&
-                                            (resolvedCtId.isEmpty ||
-                                                resolvedCtId == '0')) {
-                                          try {
-                                            final detail = await context
-                                                .read<ChatProvider>()
-                                                .getDetailRoom(
-                                                  newRoomIdStr,
-                                                  forceRefresh: true,
-                                                );
-                                            if (detail != null) {
-                                              final rData =
-                                                  detail['Room'] ??
-                                                  detail['Data']?['Room'] ??
-                                                  detail;
-                                              if (rData is Map) {
-                                                final dCtId =
-                                                    rData['CtId']?.toString() ??
-                                                    rData['ContactId']
-                                                        ?.toString();
-                                                if (dCtId != null &&
-                                                    dCtId.isNotEmpty &&
-                                                    dCtId != '0')
-                                                  resolvedCtId = dCtId;
-                                                final dLinkId = rData['LinkTmp']
-                                                        ?.toString() ??
-                                                    rData['LinkId']?.toString();
-                                                if (dLinkId != null &&
-                                                    dLinkId.isNotEmpty &&
-                                                    dLinkId != '0')
-                                                  resolvedLinkId = dLinkId;
-                                                final dAccId = rData['ChAccId']
-                                                        ?.toString() ??
-                                                    rData['AccId']?.toString();
-                                                if (dAccId != null &&
-                                                    dAccId.isNotEmpty &&
-                                                    dAccId != '0')
-                                                  resolvedAccId = dAccId;
-                                                final dCtReal = rData['CtRealId']
-                                                    ?.toString();
-                                                if (dCtReal != null &&
-                                                    dCtReal.isNotEmpty &&
-                                                    dCtReal != '0')
-                                                  resolvedCtRealId = dCtReal;
-                                                final dSender = rData['CtRealNm']
-                                                        ?.toString() ??
-                                                    rData['ContactName']
-                                                        ?.toString();
-                                                if (dSender != null &&
-                                                    dSender.isNotEmpty &&
-                                                    dSender != 'null')
-                                                  resolvedSender = dSender;
-                                              }
-                                            }
-                                          } catch (err) {
-                                            debugPrint(
-                                              'ChatList: Gagal fetch getDetailRoom untuk New Chat: $err',
-                                            );
-                                          }
-                                        }
-
-                                        newChat = ChatModel(
-                                          id: newRoomIdStr ?? '',
-                                          contactId: isGroup
-                                              ? ''
-                                              : (resolvedCtId.isNotEmpty
-                                                  ? resolvedCtId
-                                                  : (receiver ?? '')),
-                                          sender: isGroup
-                                              ? (groupName?.isNotEmpty == true
-                                                  ? groupName!
-                                                  : (selectedGroup?.isNotEmpty == true
-                                                      ? selectedGroup!
-                                                      : (manualInput.isNotEmpty
-                                                          ? manualInput
-                                                          : 'Group')))
-                                              : resolvedSender,
-                                          lastMessage: '',
-                                          time:
-                                              DateTime.now().toIso8601String(),
-                                          unreadCount: 0,
-                                          status: 'Unassigned',
-                                          agentName: '',
-                                          tags: [],
-                                          avatarUrl: null,
-                                          lastMessageType: null,
-                                          channelName:
-                                              selectedAccount?.isNotEmpty == true
-                                                  ? selectedAccount!
-                                                  : (selectedChannel ?? ''),
-                                          channelType: selectedChannel ?? '',
-                                          isPinned: false,
-                                          chId: channelIdInt.toString(),
-                                          funnel: '',
-                                          isGroup: isGroup,
-                                          isBlocked: false,
-                                          isLastMessageFromMe: true,
-                                          needReply: false,
-                                          accountId: resolvedAccId,
-                                          ctRealId: resolvedCtRealId,
-                                          link: resolvedLinkId,
-                                          campaign: '',
-                                          deal: '',
-                                          groupName: isGroup
-                                              ? (groupName?.isNotEmpty == true
-                                                  ? groupName!
-                                                  : (selectedGroup?.isNotEmpty == true
-                                                      ? selectedGroup!
-                                                      : (manualInput.isNotEmpty
-                                                          ? manualInput
-                                                          : 'Group')))
-                                              : '',
-                                          groupId:
-                                              isGroup ? (groupId?.toString() ?? receiver ?? '') : '',
-                                        );
-                                        // Masukkan ke daftar lokal agar langsung terlihat
-                                        context
-                                            .read<ChatProvider>()
-                                            .insertLocalChat(newChat);
-                                      }
-
                                       if (widget.onChatSelected != null) {
                                         widget.onChatSelected!(newChat);
                                       } else {
@@ -2355,20 +2260,16 @@ class _ChatListPageState extends State<ChatListPage>
                                           context,
                                           MaterialPageRoute(
                                             builder: (_) =>
-                                                ChatDetailPage(chat: newChat!),
+                                                ChatDetailPage(chat: newChat),
                                           ),
                                         );
                                       }
-                                      if (mounted) {
-                                        WidgetsBinding.instance
-                                            .addPostFrameCallback((_) {
-                                          if (mounted) {
-                                            context
-                                                .read<ChatProvider>()
-                                                .refreshFirstPage();
-                                          }
-                                        });
-                                      }
+
+                                      // Sinkronisasi latar belakang (tanpa await) agar data
+                                      // list ter-update setelah navigasi.
+                                      unawaited(context
+                                          .read<ChatProvider>()
+                                          .refreshFirstPage());
                                     }
                                   } else {
                                     showDialog(
@@ -2891,11 +2792,15 @@ class _ChatListPageState extends State<ChatListPage>
 
     String displayMessage = chat.lastMessage;
     bool isDeletedMessage = false;
+    // Issue 4: pesan edit/protocol/document(empty)/file kosong → placeholder Inggris
+    bool isUnsupportedMessage = isUnsupportedWhatsAppContent(chat.lastMessage);
     if (displayMessage.trim().toLowerCase() == 'document(empty)') {
       displayMessage = '';
+      isUnsupportedMessage = true;
     } else if (displayMessage.contains('Site.Inbox.DeletedMessage')) {
       displayMessage = '';
       isDeletedMessage = true;
+      isUnsupportedMessage = true;
     }
     final trimmedMsg = displayMessage.trim();
     bool parsedAsMedia = false;
@@ -3281,7 +3186,8 @@ class _ChatListPageState extends State<ChatListPage>
                     !rawText.startsWith('[')) {
                   displayMessage = rawText;
                 } else {
-                  displayMessage = '📎 Lampiran';
+                  displayMessage = kUnsupportedWhatsAppLabel;
+                  isUnsupportedMessage = true;
                 }
               } else {
                 displayMessage = '📎 $docName';
@@ -3385,7 +3291,8 @@ class _ChatListPageState extends State<ChatListPage>
             displayMessage.contains('📄')) {
           // sudah ada emoji
         } else if (displayMessage.isEmpty) {
-          displayMessage = '📎 Lampiran';
+          displayMessage = kUnsupportedWhatsAppLabel;
+          isUnsupportedMessage = true;
         } else {
           final preview = trimmedMsg.length > 35
               ? '${trimmedMsg.substring(0, 35)}...'
@@ -3447,7 +3354,8 @@ class _ChatListPageState extends State<ChatListPage>
         // Gunakan teks asli jika readable (misal pesan edit WhatsApp)
         displayMessage = originalLastMsg;
       } else {
-        displayMessage = '📎 Lampiran';
+        displayMessage = kUnsupportedWhatsAppLabel;
+        isUnsupportedMessage = true;
       }
     }
 
@@ -3459,7 +3367,8 @@ class _ChatListPageState extends State<ChatListPage>
       if (hasReadableOriginalText) {
         displayMessage = originalLastMsg;
       } else {
-        displayMessage = '📎 Lampiran';
+        displayMessage = kUnsupportedWhatsAppLabel;
+        isUnsupportedMessage = true;
       }
     }
 
@@ -3584,11 +3493,23 @@ class _ChatListPageState extends State<ChatListPage>
       displayMessage = formatPhotoPreview(displayMessage);
     }
 
+    // Issue 4: pesan edit/protocol/document(empty)/file kosong → placeholder Inggris miring
+    if (isUnsupportedMessage || isUnsupportedWhatsAppContent(displayMessage)) {
+      displayMessage = kUnsupportedWhatsAppLabel;
+    }
+
+    final bool isUnsupportedLabel = displayMessage == kUnsupportedWhatsAppLabel;
     return Text(
       displayMessage,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: TextStyle(fontSize: 13, color: messageColor),
+      style: TextStyle(
+        fontSize: 13,
+        color: isUnsupportedLabel
+            ? (isDark ? Colors.grey.shade500 : Colors.grey.shade600)
+            : messageColor,
+        fontStyle: isUnsupportedLabel ? FontStyle.italic : FontStyle.normal,
+      ),
     );
   }
 

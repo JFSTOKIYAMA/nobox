@@ -142,6 +142,28 @@ class ChatProvider with ChangeNotifier {
     return serverIsBlocked;
   }
 
+  /// Cek apakah suatu room sedang diarsipkan secara lokal atau di state memori.
+  /// HANYA mencocokkan berdasarkan RoomId (dan varian numeriknya).
+  /// TIDAK lagi mencocokkan contactId/ctRealId/link/extId agar status arsip
+  /// sebuah percakapan lama TIDAK "menular" ke room BARU milik kontak yang sama.
+  bool isRoomArchived(String roomId) {
+    if (roomId.isEmpty) return false;
+    if (_archivedIds.contains(roomId)) return true;
+    final cleanNumeric = roomId.replaceAll(RegExp(r'[^0-9]'), '');
+    if (cleanNumeric.isNotEmpty && _archivedIds.contains(cleanNumeric)) return true;
+    final idx = _chats.indexWhere((c) {
+      if (c.id == roomId) return true;
+      if (cleanNumeric.isNotEmpty && c.id.replaceAll(RegExp(r'[^0-9]'), '') == cleanNumeric) return true;
+      return false;
+    });
+    if (idx != -1) {
+      final c = _chats[idx];
+      if (c.isArchived) return true;
+      if (_archivedIds.contains(c.id)) return true;
+    }
+    return false;
+  }
+
   ChatModel _applyAgentOverride(ChatModel chat) {
     var updatedChat = chat;
     final persistedAgent = _savedAgentNames[chat.id];
@@ -588,6 +610,10 @@ class ChatProvider with ChangeNotifier {
     try {
       // Muat state lokal yang tersimpan terlebih dahulu
       await _loadPersistedState();
+      // Sinkronkan daftar arsip dari server secara asinkron tanpa memblokir
+      syncArchivedConversations().catchError((e) {
+        debugPrint('ChatProvider: silent syncArchivedConversations error: $e');
+      });
 
       // Pre-fetch semua reference data yang dibutuhkan untuk
       // client-side ID-to-name resolution (Jalur 2 filters).
@@ -996,9 +1022,13 @@ class ChatProvider with ChangeNotifier {
 
           // Terapkan state lokal yang tersimpan (arsip, dibaca)
           // Status dan Pin berasal langsung dari server
+          final isArchived = chat.isArchived || isRoomArchived(chat.id);
+          if (isArchived) {
+            _archivedIds.add(chat.id);
+          }
           return chat.copyWith(
             isPinned: chat.isPinned || _pinnedIds.contains(chat.id),
-            isArchived: _archivedIds.contains(chat.id),
+            isArchived: isArchived,
             unreadCount: _readIds.contains(chat.id)
                 ? 0
                 : (_localUnreadOverrides[chat.id] ?? chat.unreadCount),
@@ -1089,13 +1119,21 @@ class ChatProvider with ChangeNotifier {
           final archivedResponse = await _chatService
               .getArchivedConversations();
           if (!archivedResponse.isError && archivedResponse.data != null) {
-            final existingIds = _chats.map((c) => c.id).toSet();
             bool hasNewArchived = false;
             for (final archivedConv in archivedResponse.data!) {
               final archivedChat = archivedConv.toChatModel();
-              if (!existingIds.contains(archivedChat.id)) {
-                _chats.add(archivedChat.copyWith(isArchived: true));
+              if (!_archivedIds.contains(archivedChat.id)) {
                 _archivedIds.add(archivedChat.id);
+                hasNewArchived = true;
+              }
+              final idx = _chats.indexWhere((c) => c.id == archivedChat.id);
+              if (idx != -1) {
+                if (!_chats[idx].isArchived) {
+                  _chats[idx] = _chats[idx].copyWith(isArchived: true);
+                  hasNewArchived = true;
+                }
+              } else {
+                _chats.add(archivedChat.copyWith(isArchived: true));
                 hasNewArchived = true;
               }
             }
@@ -1522,6 +1560,14 @@ class ChatProvider with ChangeNotifier {
         resolvedSdrMsg = existing.sdrMsg.isNotEmpty ? existing.sdrMsg : 'you';
       }
 
+      final bool isArchived = existing.isArchived ||
+          isRoomArchived(roomId) ||
+          isRoomArchived(existing.id);
+      if (isArchived) {
+        _archivedIds.add(roomId);
+        _archivedIds.add(existing.id);
+      }
+
       _chats[index] = existing.copyWith(
         lastMessage: lastMsg,
         lastMessageType: updatedType,
@@ -1536,6 +1582,7 @@ class ChatProvider with ChangeNotifier {
         isLastMessageFromMe: isFromAgentForState,
         isBlocked: resolvedIsBlocked,
         sdrMsg: resolvedSdrMsg,
+        isArchived: isArchived,
       );
 
       debugPrint(
@@ -1543,11 +1590,19 @@ class ChatProvider with ChangeNotifier {
       );
       _notifyDebounced(); // ANR FIX: Batch rapid SignalR updates
     } else {
-      // Room not in current list — trigger a full refresh to pick it up
-      debugPrint(
-        'ChatProvider: Room $roomId not in list, triggering refreshFirstPage',
-      );
-      refreshFirstPage();
+      // Room not in current list — BUT if it is archived, do NOT refresh!
+      // Refreshing would cause the server to return the archived room (without
+      // the archived flag) and it would leak into the main chat list.
+      if (isRoomArchived(roomId)) {
+        debugPrint(
+          'ChatProvider: Room $roomId not in list but is ARCHIVED — skipping refreshFirstPage.',
+        );
+      } else {
+        debugPrint(
+          'ChatProvider: Room $roomId not in list, triggering refreshFirstPage',
+        );
+        refreshFirstPage();
+      }
     }
   }
 
@@ -1605,6 +1660,15 @@ class ChatProvider with ChangeNotifier {
     }
 
     if (index == -1) {
+      // ARSIP SHIELD: Jika room tidak ditemukan tapi sudah diarsipkan, jangan
+      // pernah trigger refreshFirstPage — ini mencegah room archived muncul
+      // kembali di daftar utama karena server tidak tahu status arsip lokal.
+      if (isRoomArchived(roomId)) {
+        debugPrint(
+          'ChatProvider: 🔒 Room $roomId missing (TerimaPesan) but is ARCHIVED — skipping refresh.',
+        );
+        return;
+      }
       debugPrint(
         'ChatProvider: 🚨 Room $roomId missing on TerimaPesan! Triggering fallback refresh.',
       );
@@ -1654,6 +1718,14 @@ class ChatProvider with ChangeNotifier {
           finalLastType = '2';
         }
 
+        final bool isArchived = matchedChat.isArchived ||
+            isRoomArchived(roomId) ||
+            isRoomArchived(matchedChat.id);
+        if (isArchived) {
+          _archivedIds.add(roomId);
+          _archivedIds.add(matchedChat.id);
+        }
+
         _chats[index] = _chats[index].copyWith(
           lastMessage: finalMsgText,
           lastMessageType: finalLastType,
@@ -1664,6 +1736,7 @@ class ChatProvider with ChangeNotifier {
           isLastMessageFromMe: resolvedIsMe,
           needReply: resolvedIsMe ? false : true,
           sdrMsg: resolvedIsMe ? 'me' : 'you',
+          isArchived: isArchived,
         );
         _chats.sort(
           (a, b) =>
@@ -1840,6 +1913,14 @@ class ChatProvider with ChangeNotifier {
         }
       }
 
+      final bool isArchived = _chats[index].isArchived ||
+          isRoomArchived(roomId) ||
+          isRoomArchived(_chats[index].id);
+      if (isArchived) {
+        _archivedIds.add(roomId);
+        _archivedIds.add(_chats[index].id);
+      }
+
       final chat = _chats[index].copyWith(
         lastMessage: lastMessage,
         lastMessageType: resolvedLastMessageType,
@@ -1848,6 +1929,7 @@ class ChatProvider with ChangeNotifier {
         unreadCount: isFromMe ? 0 : _chats[index].unreadCount,
         time: newTime,
         sdrMsg: isFromMe ? 'me' : _chats[index].sdrMsg,
+        isArchived: isArchived,
       );
 
       // Simpan sebagai override agar tidak tertimpa Inbox/GetList yang usang
@@ -1855,14 +1937,14 @@ class ChatProvider with ChangeNotifier {
       _overrideTimestamps[roomId] = DateTime.now().toUtc().toIso8601String();
       _saveLocalOverrides();
 
-      if (updateTimeAndPosition && !chat.isPinned) {
-        // Pindahkan obrolan ke posisi paling atas (hanya untuk chat yang TIDAK di-pin)
+      if (updateTimeAndPosition && !chat.isPinned && !isArchived) {
+        // Pindahkan obrolan ke posisi paling atas (hanya untuk chat aktif yang TIDAK di-pin dan TIDAK di-arsip)
         // Chat yang di-pin posisinya diatur oleh getter sortedChats via _pinnedIds, bukan oleh posisi di _chats raw.
         _chats.removeAt(index);
         _chats.insert(0, chat);
       } else {
         // Update di tempat:
-        // - Jika isPinned: jangan pindah posisi agar urutan pin tidak berubah saat ada pesan baru.
+        // - Jika isPinned atau isArchived: jangan pindah posisi agar urutan tidak berubah saat ada pesan baru.
         // - Jika !updateTimeAndPosition: misal saat hapus pesan, waktu bisa mundur.
         _chats[index] = chat;
       }
@@ -1944,9 +2026,13 @@ class ChatProvider with ChangeNotifier {
           }
 
           // Apply persisted local state
+          final isArchived = chat.isArchived || isRoomArchived(chat.id);
+          if (isArchived) {
+            _archivedIds.add(chat.id);
+          }
           chat = chat.copyWith(
             isPinned: chat.isPinned || _pinnedIds.contains(chat.id),
-            isArchived: _archivedIds.contains(chat.id),
+            isArchived: isArchived,
             unreadCount: (chat.isLastMessageFromMe || PushNotificationService.currentRoomId == chat.id)
                 ? 0
                 : (_readIds.contains(chat.id)
@@ -2302,9 +2388,13 @@ class ChatProvider with ChangeNotifier {
                 _savePinnedState();
               }
 
+              final isArchived = chat.isArchived || isRoomArchived(chat.id);
+              if (isArchived) {
+                _archivedIds.add(chat.id);
+              }
               return chat.copyWith(
                 isPinned: chat.isPinned || _pinnedIds.contains(chat.id),
-                isArchived: _archivedIds.contains(chat.id),
+                isArchived: isArchived,
                 unreadCount: _readIds.contains(chat.id)
                     ? 0
                     : (_localUnreadOverrides[chat.id] ?? chat.unreadCount),
@@ -2312,8 +2402,16 @@ class ChatProvider with ChangeNotifier {
             })
             .toList();
 
-        if (newChats.isNotEmpty) {
-          _chats.insertAll(0, newChats);
+        // ARSIP SHIELD: Jangan pernah menambahkan room yang sudah diarsipkan ke
+        // daftar utama, bahkan jika server mengembalikannya tanpa status archived.
+        final nonArchivedNewChats = newChats.where((chat) {
+          if (chat.isArchived) return false;
+          if (_archivedIds.contains(chat.id)) return false;
+          return true;
+        }).toList();
+
+        if (nonArchivedNewChats.isNotEmpty) {
+          _chats.insertAll(0, nonArchivedNewChats);
         }
 
         // 1. Check for DeletedMessages, system logs, or rooms with deleted messages
@@ -2418,9 +2516,13 @@ class ChatProvider with ChangeNotifier {
                 }
 
                 // Apply persisted local state
+                final isArchived = chat.isArchived || isRoomArchived(chat.id);
+                if (isArchived) {
+                  _archivedIds.add(chat.id);
+                }
                 return chat.copyWith(
                   isPinned: chat.isPinned || _pinnedIds.contains(chat.id),
-                  isArchived: _archivedIds.contains(chat.id),
+                  isArchived: isArchived,
                   unreadCount: _readIds.contains(chat.id)
                       ? 0
                       : (_localUnreadOverrides[chat.id] ?? chat.unreadCount),
@@ -2607,7 +2709,16 @@ class ChatProvider with ChangeNotifier {
     });
   }
 
-  void _saveArchivedState() {
+  void _saveArchivedState({bool immediate = false}) {
+    if (immediate) {
+      _saveArchivedDebounce?.cancel();
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString(_archivedKey, jsonEncode(_archivedIds.toList()));
+      }).catchError((e) {
+        debugPrint('ChatProvider: Failed to save archived state immediately: $e');
+      });
+      return;
+    }
     _saveArchivedDebounce?.cancel();
     _saveArchivedDebounce = Timer(const Duration(milliseconds: 400), () async {
       try {
@@ -2864,7 +2975,9 @@ class ChatProvider with ChangeNotifier {
   // [ACTION: FILTER_APPLY] - Getter ini mengeksekusi filter (lokal) pada daftar chat
   List<ChatModel> get chats {
     var filtered = _chats.where((chat) {
-      if (chat.isArchived) return false;
+      if (chat.isArchived || isRoomArchived(chat.id)) {
+        return false;
+      }
       final senderLower = chat.sender.toLowerCase().trim();
       if (senderLower == 'saved messages' || senderLower == 'pesan tersimpan') {
         return false;
@@ -3089,7 +3202,9 @@ class ChatProvider with ChangeNotifier {
   }
 
   List<ChatModel> get archivedChats {
-    return _chats.where((chat) => chat.isArchived).toList();
+    return _chats.where((chat) =>
+        chat.isArchived || isRoomArchived(chat.id)
+    ).toList();
   }
 
   void markAsRead(String chatId) {
@@ -3378,6 +3493,16 @@ class ChatProvider with ChangeNotifier {
       recordRecentSentMessage(chat.id, cleanMsg);
     }
 
+    // Guard: SignalR membutuhkan IdRoom valid. Jika room id kosong/"0", jangan
+    // kirim via SignalR (backend NoBox pasti menolak) — biarkan caller fallback
+    // ke REST API Inbox/Send yang bisa resolve room id dari field lain.
+    if (chat.id.isEmpty || chat.id == '0' || chat.id == 'null') {
+      debugPrint(
+        'ChatProvider: ❌ sendMessageViaSignalR DIBATALKAN: chat.id kosong/0 → fallback REST.',
+      );
+      return 'RoomId is empty or invalid (${chat.id})';
+    }
+
     final error = await SignalRService().invokeKirimPesan(
       idLink: idLinkValue, // Null untuk group, contactId integer untuk private
       idAccount: resolvedAccountId,
@@ -3431,42 +3556,88 @@ class ChatProvider with ChangeNotifier {
   // [ACTION: ARCHIVE_TOGGLE] - Otak pemrosesan saat arsip diubah dari UI
   Future<void> toggleArchive(String chatId) async {
     final index = _chats.indexWhere((chat) => chat.id == chatId);
-    if (index != -1) {
-      final newArchived = !_chats[index].isArchived;
+    final targetChat = index != -1 ? _chats[index] : null;
+    final currentlyArchived = isRoomArchived(chatId) || (targetChat?.isArchived ?? false);
+    final newArchived = !currentlyArchived;
 
-      // Pembaruan UI seketika (Optimistic Update) agar aplikasi terasa cepat
+    // Simpan HANYA varian RoomId (bukan contactId/ctRealId) agar arsip TIDAK
+    // "menular" ke room baru milik kontak yang sama.
+    final idsToUpdate = <String>{chatId};
+    final numChatId = chatId.replaceAll(RegExp(r'[^0-9]'), '');
+    if (numChatId.isNotEmpty) idsToUpdate.add(numChatId);
+
+    if (targetChat != null) {
+      if (targetChat.id.isNotEmpty) idsToUpdate.add(targetChat.id);
+      final numId = targetChat.id.replaceAll(RegExp(r'[^0-9]'), '');
+      if (numId.isNotEmpty) idsToUpdate.add(numId);
+    }
+
+    if (newArchived) {
+      _archivedIds.addAll(idsToUpdate);
+      _pinnedIds.remove(chatId);
+      _savePinnedState();
+    } else {
+      _archivedIds.removeAll(idsToUpdate);
+    }
+    _saveArchivedState(immediate: true);
+
+    if (index != -1) {
       _chats[index] = _chats[index].copyWith(
         isArchived: newArchived,
-        isPinned: false, // Biasanya jika diarsipkan, pin akan dilepas
+        isPinned: false,
       );
+    }
+    notifyListeners();
 
+    // Kirim sinkronisasi ke backend NoBox di latar belakang
+    // PENTING: JANGAN PERNAH ROLLBACK status arsip lokal jika server gagal/error!
+    // Ini mengunci fitur "Tetap Arsipkan Chat" ala WhatsApp sehingga chat TIDAK
+    // keluar ke daftar obrolan utama meskipun ada interaksi di WhatsApp atau server me-reset status.
+    try {
       if (newArchived) {
-        _archivedIds.add(chatId);
-        _pinnedIds.remove(chatId);
-        _savePinnedState();
+        await _chatService.moveToArchive(chatId);
       } else {
-        _archivedIds.remove(chatId);
+        await _chatService.restoreArchived(chatId);
       }
-      _saveArchivedState();
-      notifyListeners();
+    } catch (e) {
+      debugPrint('ChatProvider: Server archive/restore background sync error: $e');
+    }
+  }
 
-      // Kirim perintah arsip ke server
-      final response = newArchived
-          ? await _chatService.moveToArchive(chatId)
-          : await _chatService.restoreArchived(chatId);
+  /// Sinkronisasi percakapan yang diarsipkan dari server dan gabungkan ke memori
+  Future<void> syncArchivedConversations() async {
+    try {
+      final archivedResponse = await _chatService.getArchivedConversations();
+      if (!archivedResponse.isError && archivedResponse.data != null) {
+        bool hasChanges = false;
+        for (final archivedConv in archivedResponse.data!) {
+          final archivedChat = archivedConv.toChatModel();
+          final numId = archivedChat.id.replaceAll(RegExp(r'[^0-9]'), '');
+          
+          if (!_archivedIds.contains(archivedChat.id)) {
+            _archivedIds.add(archivedChat.id);
+            if (numId.isNotEmpty) _archivedIds.add(numId);
+            hasChanges = true;
+          }
 
-      if (response.isError) {
-        // Kembalikan ke kondisi semula (Rollback) jika server gagal memproses
-        _chats[index] = _chats[index].copyWith(isArchived: !newArchived);
-        if (!newArchived) {
-          _archivedIds.add(chatId);
-        } else {
-          _archivedIds.remove(chatId);
+          final idx = _chats.indexWhere((c) => c.id == archivedChat.id || (numId.isNotEmpty && c.id.replaceAll(RegExp(r'[^0-9]'), '') == numId));
+          if (idx != -1) {
+            if (!_chats[idx].isArchived) {
+              _chats[idx] = _chats[idx].copyWith(isArchived: true);
+              hasChanges = true;
+            }
+          } else {
+            _chats.add(archivedChat.copyWith(isArchived: true));
+            hasChanges = true;
+          }
         }
-        _saveArchivedState();
-        _error = response.error;
-        notifyListeners();
+        if (hasChanges) {
+          _saveArchivedState(immediate: true);
+          notifyListeners();
+        }
       }
+    } catch (e) {
+      debugPrint('ChatProvider: Failed to sync archived conversations: $e');
     }
   }
 

@@ -1118,85 +1118,91 @@ class ChatService {
         final messages = dataList.map((json) => Message.fromJson(json, currentUserEmail, tenantId: currentTenantId, contactId: contactId)).toList();
         
         // FIX UNIVERSAL FALLBACK:
-        // NoBox occasionally stores messages under CtRealId, ContactId, or Link instead of the newly assigned RoomId
-        // (baik untuk Telegram maupun WhatsApp yang dibuat lewat New Conversation nomor telepon).
-        // Untuk menghindari "data bleeding" pada channel non-Telegram (di mana angka kecil berurut seperti '1' atau '2'
-        // bisa milik RoomId pengguna lain), kita terapkan filter pengaman otomatis.
-        final Set<String> fallbackIds = {};
-        if (ctRealId.isNotEmpty && ctRealId != roomId) fallbackIds.add(ctRealId);
-        if (contactId.isNotEmpty && contactId != roomId) fallbackIds.add(contactId);
-        if (link.isNotEmpty && link != roomId) fallbackIds.add(link);
-        
-        if (roomId.isNotEmpty && roomId != '0' && roomId != 'null') {
-          final numericRoomId = roomId.replaceAll(RegExp(r'[^0-9\-]'), '');
-          if (numericRoomId.isNotEmpty && numericRoomId != roomId) fallbackIds.add(numericRoomId);
-        }
-
-        if (roomId.contains('_')) {
-           final afterUnderscore = roomId.split('_').last;
-           if (afterUnderscore.isNotEmpty && afterUnderscore != roomId) fallbackIds.add(afterUnderscore);
-        }
-
-        // Pengaman anti-bleeding untuk non-Telegram: saring keluar angka kecil urut (< 100.000)
-        // yang bukan merupakan nomor telepon atau UUID.
-        if (!isTelegram) {
-          fallbackIds.removeWhere((fId) {
-            final clean = fId.trim();
-            if (clean.isEmpty) return true;
-            final asInt = int.tryParse(clean);
-            // Angka kecil tanpa awalan 0 atau + adalah ID database internal (berpotensi bleeding jika dijadikan RoomId)
-            if (asInt != null && asInt < 100000 && !clean.startsWith('0') && !clean.startsWith('+')) {
-              return true;
-            }
-            return false;
-          });
-        }
-
-        if (fallbackIds.isNotEmpty) {
-          bool hasNewMessages = false;
-
-          for (final fId in fallbackIds) {
-            debugPrint('ChatService: │ [UNIVERSAL FALLBACK] Fetching fallback ID: $fId (chId=$roomId)');
-            try {
-              final payload2 = Map<String, dynamic>.from(payload);
-              payload2['EqualityFilter'] = {'RoomId': fId};
-              final response2 = await _apiClient.post(AppConfig.getMessagesEndpoint, data: payload2);
-              if (response2.statusCode == 200 && response2.data != null) {
-                final raw2 = response2.data;
-                List<dynamic> list2 = [];
-                if (raw2 is List) list2 = raw2;
-                else if (raw2 is Map && raw2['IsError'] != true) list2 = raw2['Entities'] ?? raw2['Values'] ?? raw2['data'] ?? [];
-                
-                if (list2.isNotEmpty) {
-                  final msgs2 = list2.map((json) => Message.fromJson(json, currentUserEmail, tenantId: currentTenantId)).toList();
-                  
-                  final uniqueMsgs = <String, Message>{};
-                  for (var m in messages) { if (m.id.isNotEmpty) uniqueMsgs[m.id] = m; }
-                  for (var m in msgs2) { if (m.id.isNotEmpty) uniqueMsgs[m.id] = m; }
-                  
-                  messages.clear();
-                  messages.addAll(uniqueMsgs.values);
-                  hasNewMessages = true;
-                }
-              }
-            } catch (e) {
-              debugPrint('ChatService: │ [UNIVERSAL FALLBACK] Error fetching $fId: $e');
-            }
-          }
+        // PENTING: Hanya jalankan fallback jika query utama menghasilkan 0 pesan (messages.isEmpty)!
+        // Jika roomId utama sudah mengembalikan pesan, JANGAN PERNAH menjalankan fallback karena
+        // contactId/ctRealId/link bisa merupakan RoomId dari percakapan LAMA yang sudah diarsipkan,
+        // sehingga pesan lama akan ikut terambil dan bercampur dengan percakapan baru.
+        if (messages.isEmpty) {
+          final Set<String> fallbackIds = {};
           
-          if (hasNewMessages && messages.isNotEmpty) {
-            messages.sort((a, b) {
-              try {
-                String ta = a.rawTime;
-                String tb = b.rawTime;
-                if (!ta.endsWith('Z') && !ta.contains('+') && ta.length >= 19) ta += 'Z';
-                if (!tb.endsWith('Z') && !tb.contains('+') && tb.length >= 19) tb += 'Z';
-                return DateTime.parse(tb).compareTo(DateTime.parse(ta)); // DESC
-              } catch (_) { return 0; }
+          if (roomId.isNotEmpty && roomId != '0' && roomId != 'null') {
+            final numericRoomId = roomId.replaceAll(RegExp(r'[^0-9\-]'), '');
+            if (numericRoomId.isNotEmpty && numericRoomId != roomId) fallbackIds.add(numericRoomId);
+          }
+
+          if (roomId.contains('_')) {
+             final afterUnderscore = roomId.split('_').last;
+             if (afterUnderscore.isNotEmpty && afterUnderscore != roomId) fallbackIds.add(afterUnderscore);
+          }
+
+          // Untuk non-Telegram, HANYA gunakan contactId/ctRealId jika roomId utama kosong/tidak valid
+          if (isTelegram || roomId.isEmpty || roomId == '0' || roomId == 'null') {
+            if (ctRealId.isNotEmpty && ctRealId != roomId) fallbackIds.add(ctRealId);
+            if (contactId.isNotEmpty && contactId != roomId) fallbackIds.add(contactId);
+            if (link.isNotEmpty && link != roomId) fallbackIds.add(link);
+          }
+
+          // Pengaman anti-bleeding untuk non-Telegram: saring keluar angka kecil urut (< 100.000)
+          // yang bukan merupakan nomor telepon atau UUID.
+          if (!isTelegram) {
+            fallbackIds.removeWhere((fId) {
+              final clean = fId.trim();
+              if (clean.isEmpty) return true;
+              final asInt = int.tryParse(clean);
+              // Angka kecil tanpa awalan 0 atau + adalah ID database internal (berpotensi bleeding jika dijadikan RoomId)
+              if (asInt != null && asInt < 100000 && !clean.startsWith('0') && !clean.startsWith('+')) {
+                return true;
+              }
+              return false;
             });
+          }
+
+          if (fallbackIds.isNotEmpty) {
+            bool hasNewMessages = false;
+
+            for (final fId in fallbackIds) {
+              debugPrint('ChatService: │ [UNIVERSAL FALLBACK] Fetching fallback ID: $fId (chId=$roomId)');
+              try {
+                final payload2 = Map<String, dynamic>.from(payload);
+                payload2['EqualityFilter'] = {'RoomId': fId};
+                final response2 = await _apiClient.post(AppConfig.getMessagesEndpoint, data: payload2);
+                if (response2.statusCode == 200 && response2.data != null) {
+                  final raw2 = response2.data;
+                  List<dynamic> list2 = [];
+                  if (raw2 is List) list2 = raw2;
+                  else if (raw2 is Map && raw2['IsError'] != true) list2 = raw2['Entities'] ?? raw2['Values'] ?? raw2['data'] ?? [];
+                  
+                  if (list2.isNotEmpty) {
+                    final msgs2 = list2.map((json) => Message.fromJson(json, currentUserEmail, tenantId: currentTenantId)).toList();
+                    
+                    final uniqueMsgs = <String, Message>{};
+                    for (var m in messages) { if (m.id.isNotEmpty) uniqueMsgs[m.id] = m; }
+                    for (var m in msgs2) { if (m.id.isNotEmpty) uniqueMsgs[m.id] = m; }
+                    
+                    messages.clear();
+                    messages.addAll(uniqueMsgs.values);
+                    hasNewMessages = true;
+                  }
+                }
+              } catch (e) {
+                debugPrint('ChatService: │ [UNIVERSAL FALLBACK] Error fetching $fId: $e');
+              }
+            }
             
-            if (messages.length > take) {
-              messages.removeRange(take, messages.length);
+            if (hasNewMessages && messages.isNotEmpty) {
+              messages.sort((a, b) {
+                try {
+                  String ta = a.rawTime;
+                  String tb = b.rawTime;
+                  if (!ta.endsWith('Z') && !ta.contains('+') && ta.length >= 19) ta += 'Z';
+                  if (!tb.endsWith('Z') && !tb.contains('+') && tb.length >= 19) tb += 'Z';
+                  return DateTime.parse(tb).compareTo(DateTime.parse(ta)); // DESC
+                } catch (_) { return 0; }
+              });
+              
+              if (messages.length > take) {
+                messages.removeRange(take, messages.length);
+              }
             }
           }
         }
@@ -1485,6 +1491,21 @@ class ChatService {
           extractedAccId ??= result['AccId']?.toString() ?? result['accId']?.toString();
           extractedCtRealId ??= result['CtRealId']?.toString() ?? result['ctRealId']?.toString();
 
+          // Aman: normalisasi nilai placeholder ('0'/'null'/'' ) agar field ID
+          // TIDAK membawa nilai rusak ke ChatModel & proses kirim pesan.
+          String? scrub(String? v) {
+            if (v == null) return null;
+            final t = v.trim();
+            if (t.isEmpty || t == '0' || t.toLowerCase() == 'null') return null;
+            return v;
+          }
+
+          extractedRoomId = scrub(extractedRoomId);
+          extractedCtId = scrub(extractedCtId);
+          extractedLinkId = scrub(extractedLinkId);
+          extractedAccId = scrub(extractedAccId);
+          extractedCtRealId = scrub(extractedCtRealId);
+
           debugPrint('ChatService: ✅ Extracted RoomId from createNewRoom: $extractedRoomId | CtId: $extractedCtId | LinkId: $extractedLinkId | AccId: $extractedAccId');
           return {
             'success': true,
@@ -1531,9 +1552,20 @@ class ChatService {
   // teks balasan, gambar, dokumen, hingga rekaman suara ke API server agar diteruskan ke WhatsApp.
   Future<ApiResponse<bool>> sendMessage(MessageRequest request) async {
     try {
-      final roomIdStr = request.receiver;
+      var roomIdStr = request.receiver;
       final content = request.content;
-      
+
+      // Promosikan ID alternatif (GroupId/CtRealId/contactId) jika receiver
+      // kosong/"0"/"null" agar Inbox/Send tidak menerima Id=0 atau null.
+      bool isBad(String v) => v.isEmpty || v == '0' || v == 'null';
+      if (isBad(roomIdStr)) roomIdStr = request.groupId ?? roomIdStr;
+      if (isBad(roomIdStr)) roomIdStr = request.extId ?? roomIdStr;
+      if (isBad(roomIdStr)) roomIdStr = request.contactId ?? roomIdStr;
+      if (isBad(roomIdStr)) {
+        debugPrint('ChatService: ❌ sendMessage DIBATALKAN: RoomId tidak valid ($roomIdStr).');
+        return ApiResponse.failure('RoomId is empty or invalid', 400);
+      }
+
       debugPrint('ChatService: ┌── sendMessage (REST API) ──');
       debugPrint('ChatService: │ RoomId: $roomIdStr');
       debugPrint('ChatService: │ Content: $content');
@@ -3156,18 +3188,20 @@ class ChatService {
   Future<ApiResponse<bool>> moveToArchive(String roomId) async {
     try {
       debugPrint('📦 ChatService: Moving room $roomId to archive');
+      final cleanRoomId = roomId.replaceAll(RegExp(r'[^0-9]'), '');
+      final parsedId = int.tryParse(cleanRoomId) ?? int.tryParse(roomId) ?? roomId;
       final response = await _apiClient.post(
         AppConfig.moveArchiveEndpoint,
         data: {
-          'EntityId': roomId,
+          'EntityId': parsedId,
         },
       );
       // Wait for 1s to allow server indexing to finish (so it disappears from Main Tab)
       await Future.delayed(const Duration(seconds: 1));
 
-      debugPrint('UPDATE FORM RAW RESPONSE: ');
+      debugPrint('UPDATE FORM RAW RESPONSE: ${response.data}');
       final data = response.data;
-      if (response.statusCode == 200 && (data is Map && data['IsError'] != true)) {
+      if (response.statusCode == 200 && (data is! Map || data['IsError'] != true)) {
         return ApiResponse.success(true, 200);
       }
       final errorMsg = data is Map ? (data['ErrorMsg'] ?? data['Error'] ?? data.toString()) : data.toString();
@@ -3182,18 +3216,20 @@ class ChatService {
   Future<ApiResponse<bool>> restoreArchived(String roomId) async {
     try {
       debugPrint('📦 ChatService: Restoring room $roomId from archive');
+      final cleanRoomId = roomId.replaceAll(RegExp(r'[^0-9]'), '');
+      final parsedId = int.tryParse(cleanRoomId) ?? int.tryParse(roomId) ?? roomId;
       final response = await _apiClient.post(
         AppConfig.restoreArchivedEndpoint,
         data: {
-          'EntityId': roomId,
+          'EntityId': parsedId,
         },
       );
       // Wait for 1s to allow server indexing to finish
       await Future.delayed(const Duration(seconds: 1));
 
-      debugPrint('UPDATE FORM RAW RESPONSE: ');
+      debugPrint('UPDATE FORM RAW RESPONSE: ${response.data}');
       final data = response.data;
-      if (response.statusCode == 200 && (data is Map && data['IsError'] != true)) {
+      if (response.statusCode == 200 && (data is! Map || data['IsError'] != true)) {
         return ApiResponse.success(true, 200);
       }
       final errorMsg = data is Map ? (data['ErrorMsg'] ?? data['Error'] ?? data.toString()) : data.toString();

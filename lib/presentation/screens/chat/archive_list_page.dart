@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import 'package:provider/provider.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-
 import '../../../core/providers/chat_provider.dart';
 import '../../../core/providers/theme_provider.dart';
 import '../../../core/model/message.dart';
 import '../../widgets/channel_icon.dart';
-import '../../widgets/room_shimmer_widget.dart';
 import 'chat_detail_page.dart';
 import '../../widgets/authenticated_avatar.dart';
 
@@ -29,6 +26,16 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final Set<String> _selectedChats = {};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<ChatProvider>().syncArchivedConversations();
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -207,27 +214,42 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                   }
                   
                   if (chats.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                    return RefreshIndicator(
+                      onRefresh: () => chatProvider.syncArchivedConversations(),
+                      child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
                         children: [
-                          Icon(Icons.inventory_2_outlined, size: 80, color: isDark ? Colors.grey.shade700 : Colors.grey.shade400),
-                          const SizedBox(height: 16),
-                          Text(
-                            _searchQuery.isEmpty ? 'No archived chats' : 'No search results',
-                            style: TextStyle(color: isDark ? Colors.grey.shade500 : Colors.grey.shade600, fontSize: 16),
+                          SizedBox(
+                            height: MediaQuery.of(context).size.height * 0.6,
+                            child: Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.inventory_2_outlined, size: 80, color: isDark ? Colors.grey.shade700 : Colors.grey.shade400),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    _searchQuery.isEmpty ? 'No archived chats' : 'No search results',
+                                    style: TextStyle(color: isDark ? Colors.grey.shade500 : Colors.grey.shade600, fontSize: 16),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
                       ),
                     );
                   }
 
-                  return ListView.builder(
-                    itemCount: chats.length,
-                    itemBuilder: (context, index) {
-                      final chat = chats[index];
-                      return _buildChatTile(context, chat, chatProvider, isDark);
-                    },
+                  return RefreshIndicator(
+                    onRefresh: () => chatProvider.syncArchivedConversations(),
+                    child: ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: chats.length,
+                      itemBuilder: (context, index) {
+                        final chat = chats[index];
+                        return _buildChatTile(context, chat, chatProvider, isDark);
+                      },
+                    ),
                   );
                 },
               ),
@@ -455,7 +477,7 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
               );
               
               if (mounted) {
-                chatProvider.refreshFirstPage(customStatusCode: 4);
+                chatProvider.syncArchivedConversations();
               }
             },
             // FITUR: Long Press Chat (Aktifkan Mode Seleksi)

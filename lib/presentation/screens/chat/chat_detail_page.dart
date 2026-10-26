@@ -224,19 +224,31 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
   Set<String> _getPersistenceKeys() {
     final keys = <String>{};
-    if (chat.id.isNotEmpty && chat.id != 'null') keys.add(chat.id);
+    // Prioritas UTAMA: Jika chat.id valid, persistence key HANYA boleh chat.id!
+    // JANGAN PERNAH menambahkan contactId, ctRealId, sender, atau nomor telepon
+    // jika chat.id valid, karena satu kontak bisa memiliki banyak percakapan
+    // (misal: percakapan lama yang diarsipkan dan percakapan baru yang aktif).
+    // Memasukkan contactId/nomor telepon akan menyebabkan pesan percakapan lama bocor ke percakapan baru!
+    if (chat.id.isNotEmpty && chat.id != 'null' && chat.id != '0') {
+      keys.add(chat.id);
+      return keys;
+    }
     if (chat.contactId.isNotEmpty &&
         chat.contactId != '0' &&
-        chat.contactId != 'null')
+        chat.contactId != 'null') {
       keys.add(chat.contactId);
+    }
     if (chat.ctRealId.isNotEmpty &&
         chat.ctRealId != '0' &&
-        chat.ctRealId != 'null')
+        chat.ctRealId != 'null') {
       keys.add(chat.ctRealId);
-    if (chat.link.isNotEmpty && chat.link != '0' && chat.link != 'null')
+    }
+    if (chat.link.isNotEmpty && chat.link != '0' && chat.link != 'null') {
       keys.add(chat.link);
-    if (chat.sender.isNotEmpty && chat.sender != 'null')
+    }
+    if (chat.sender.isNotEmpty && chat.sender != 'null') {
       keys.add(chat.sender.trim().toLowerCase());
+    }
     final phoneOnly = chat.sender.replaceAll(RegExp(r'[^0-9]'), '');
     if (phoneOnly.isNotEmpty && phoneOnly.length >= 8) keys.add(phoneOnly);
     if (keys.isEmpty) keys.add('default_chat_${chat.hashCode}');
@@ -270,6 +282,20 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             'deleted_ids_$key',
             _deletedMessageIds.toList(),
           );
+        }
+
+        // Bersihkan cache legacy yang sempat tersimpan menggunakan contactId / phoneOnly
+        // agar tidak membocorkan pesan lama ke percakapan lain
+        if (chat.id.isNotEmpty && chat.id != 'null' && chat.id != '0') {
+          if (chat.contactId.isNotEmpty && chat.contactId != chat.id) {
+            await prefs.remove('persist_msgs_${chat.contactId}');
+            await prefs.remove('sent_cache_${chat.contactId}');
+          }
+          final phoneOnly = chat.sender.replaceAll(RegExp(r'[^0-9]'), '');
+          if (phoneOnly.isNotEmpty && phoneOnly != chat.id) {
+            await prefs.remove('persist_msgs_$phoneOnly');
+            await prefs.remove('sent_cache_$phoneOnly');
+          }
         }
 
         final cacheList = (_localSentCache[chat.id] ?? [])
@@ -341,7 +367,18 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           final decoded = jsonDecode(jsonStr) as List;
           restored = decoded
               .map((m) => Message.fromMap(m as Map<String, dynamic>))
-              .where((m) => m.id.isEmpty || !_deletedMessageIds.contains(m.id))
+              .where((m) {
+                if (m.id.isNotEmpty && _deletedMessageIds.contains(m.id)) {
+                  return false;
+                }
+                // Guard: Jangan restore pesan yang memiliki roomId berbeda dari room saat ini
+                if (chat.id.isNotEmpty && chat.id != 'null' && chat.id != '0') {
+                  if (m.roomId.isNotEmpty && m.roomId != '0' && m.roomId != chat.id) {
+                    return false;
+                  }
+                }
+                return true;
+              })
               .toList();
           if (restored.isNotEmpty) {
             debugPrint(
@@ -1227,6 +1264,15 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 final List<Message> serverMessagesToMatch = List.from(mergedList);
 
                 for (final localMsg in existingLocal) {
+                  // Guard: Jangan gabungkan pesan lokal yang berasal dari room lain
+                  if (chat.id.isNotEmpty && chat.id != 'null' && chat.id != '0') {
+                    if (localMsg.roomId.isNotEmpty &&
+                        localMsg.roomId != '0' &&
+                        localMsg.roomId != chat.id) {
+                      continue;
+                    }
+                  }
+
                   if (localMsg.id.isNotEmpty && localMsg.id != '0') {
                     if (!mergedList.any((s) => s.id == localMsg.id)) {
                       mergedList.add(localMsg);
@@ -3044,6 +3090,12 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         chat = ModalRoute.of(context)!.settings.arguments as ChatModel;
       }
       _chatProvider ??= Provider.of<ChatProvider>(context, listen: false);
+      // HANYA tandai arsip berdasarkan RoomId (dan status bawaan chat). Jangan
+      // gunakan chat.contactId agar room BARU dengan kontak lama tidak ikut
+      // terkunci/terarsip oleh status arsip percakapan lama kontak yang sama.
+      if (_chatProvider != null && _chatProvider!.isRoomArchived(chat.id)) {
+        chat = chat.copyWith(isArchived: true);
+      }
       _authProvider ??= Provider.of<AuthProvider>(context, listen: false);
       if (_currentUserEmail.isEmpty) {
         _currentUserEmail = _authProvider?.currentUser ?? '';
@@ -3086,6 +3138,30 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 ? rawCtReal
                 : chat.groupId);
 
+        // FIX: Update data kontak (nama & foto profil) dari respons DetailRoom
+        // agar header, avatar, dan Chat List ikut sinkron tanpa keluar-masuk halaman.
+        final contactMap = (d['ContactReal'] is Map)
+            ? Map<String, dynamic>.from(d['ContactReal'] as Map)
+            : (d['Contact'] is Map)
+                ? Map<String, dynamic>.from(d['Contact'] as Map)
+                : <String, dynamic>{};
+        final newSender = (rMap['CtRealNm']?.toString() ??
+                rMap['CtNm']?.toString() ??
+                d['CtRealNm']?.toString() ??
+                contactMap['Name']?.toString() ??
+                contactMap['Nm']?.toString())
+            ?.trim();
+        final rawAvatar = contactMap['Photo']?.toString() ??
+            rMap['CtImg']?.toString() ??
+            rMap['LinkImg']?.toString() ??
+            d['Photo']?.toString();
+        String? newAvatar;
+        if (rawAvatar != null && rawAvatar.isNotEmpty && rawAvatar != 'null') {
+          newAvatar = rawAvatar.startsWith('http')
+              ? rawAvatar
+              : 'https://id.nobox.ai/upload/${rawAvatar.replaceAll('\\', '/')}';
+        }
+
         setState(() {
           chat = chat.copyWith(
             accountId: (chAccId != null && chAccId.isNotEmpty && chAccId != '0') ? chAccId : chat.accountId,
@@ -3096,8 +3172,24 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             isGroup: isGrp,
             groupId: (resolvedGrpId != null && resolvedGrpId.isNotEmpty && resolvedGrpId != '0') ? resolvedGrpId : chat.groupId,
             groupName: (rawGrpNm != null && rawGrpNm.isNotEmpty && rawGrpNm != 'null') ? rawGrpNm : chat.groupName,
+            sender: (newSender != null && newSender.isNotEmpty && newSender != 'null') ? newSender : chat.sender,
+            avatarUrl: (newAvatar != null && newAvatar.isNotEmpty) ? newAvatar : chat.avatarUrl,
           );
         });
+
+        // Update nama & avatar ke ChatProvider agar daftar chat & header ikut sinkron.
+        final chatProvForDetail = _chatProvider;
+        if (chatProvForDetail != null) {
+          final provIdx = chatProvForDetail.allChats.indexWhere((c) => c.id == chat.id);
+          if (provIdx != -1) {
+            final providerChat = chatProvForDetail.allChats[provIdx];
+            chatProvForDetail.updateLocalChat(providerChat.copyWith(
+              sender: chat.sender.isEmpty ? providerChat.sender : chat.sender,
+              avatarUrl: chat.avatarUrl ?? providerChat.avatarUrl,
+            ));
+          }
+        }
+
         debugPrint('ChatDetail: ✅ Refreshed room details: ChAccId=$chAccId, isGroup=$isGrp, GrpId=${chat.groupId}, GrpNm=${chat.groupName}');
       }).catchError((e) {
         debugPrint('ChatDetail: ⚠️ Background getDetailRoom error: $e');
@@ -3284,7 +3376,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   //          status terkirim/pending, serta membersihkan input bar.]
   // =====================================================================
   void _sendMessage() async {
-    if (_isSending) return; // Mencegah pengiriman ganda (double-tap)
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+    final isArchived = chat.isArchived || chatProvider.isRoomArchived(chat.id);
+    if (_isSending || isArchived) return; // Mencegah pengiriman ganda atau pada chat terarsip
 
     final content = _messageController.text.trim();
     if (content.isEmpty) return;
@@ -3315,7 +3409,6 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
     _scrollToBottom();
 
-    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
     // FIX: Optimistic update for Chat List preview so it appears instantly when returning to list
     chatProvider.updateLocalLastMessage(chat.id, content, isFromMe: true);
 
@@ -4549,8 +4642,40 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       }
     });
 
-    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
-    chat = chat.copyWith(isBlocked: isChatBlocked);
+    final bool isChatArchived = context.select<ChatProvider, bool>((p) {
+      return p.isRoomArchived(chat.id);
+    });
+
+    // FIX: Sinkronkan seluruh data kontak (nama, avatar, tags, funnel, deal, campaign,
+    // agent, needReply) dari ChatProvider agar perubahan dari Edit Contact/Contact Info
+    // maupun server/SignalR langsung ter-refleks di header & AppBar tanpa keluar-masuk halaman.
+    final ChatModel? currentChat = context.select<ChatProvider, ChatModel?>((p) {
+      try {
+        return p.allChats.firstWhere((c) => c.id == chat.id);
+      } catch (_) {
+        return null;
+      }
+    });
+
+    if (currentChat != null) {
+      chat = chat.copyWith(
+        sender: currentChat.sender,
+        avatarUrl: currentChat.avatarUrl,
+        tags: currentChat.tags,
+        funnel: currentChat.funnel,
+        deal: currentChat.deal,
+        campaign: currentChat.campaign,
+        agentName: currentChat.agentName,
+        isBlocked: isChatBlocked,
+        isArchived: isChatArchived || chat.isArchived,
+        needReply: currentChat.needReply,
+      );
+    } else {
+      chat = chat.copyWith(
+        isBlocked: isChatBlocked,
+        isArchived: isChatArchived || chat.isArchived,
+      );
+    }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -4638,7 +4763,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (chat.isArchived)
+                        if (chat.isArchived || isChatArchived)
                           _buildArchivedBanner(isDark)
                         else if (!widget.isReadOnly) ...[
                           if (chat.isBlocked ||
@@ -5053,6 +5178,19 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   //          atau percakapan telah diselesaikan (Resolved). Menyediakan teks
   //          status peringatan, tombol info kontak, dan menu opsi lanjutan.]
   // =====================================================================
+  // FITUR: Buka Info Kontak
+  // FUNGSI: Navigasi ke ContactInfoPage lalu refresh state halaman ini saat kembali,
+  //          agar perubahan nama/avatar/tags/funnel/dll langsung ter-render realtime.
+  Future<void> _openContactInfo() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => ContactInfoPage(chat: chat)),
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   PreferredSizeWidget _buildAppBar(bool isDark) {
     // ── STATUS APP BAR (Resolved / Blocked - Web Dashboard Style) ──
     final bool isResolved = chat.status.toLowerCase() == 'resolved';
@@ -5092,14 +5230,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               size: const Size(26, 22),
               painter: _SidebarIconPainter(color: iconColor),
             ),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ContactInfoPage(chat: chat),
-                ),
-              );
-            },
+            onPressed: () => _openContactInfo(),
           ),
           // =====================================================================
           // [KATA KUNCI: Menu Titik Tiga | Opsi Chat | Add Agent | Mark Resolved | Archive]
@@ -5226,14 +5357,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               size: const Size(26, 22),
               painter: _SidebarIconPainter(color: Colors.white),
             ),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ContactInfoPage(chat: chat),
-                ),
-              );
-            },
+            onPressed: () => _openContactInfo(),
           ),
           // Restore (styled as delete icon)
           IconButton(
@@ -5261,14 +5385,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       leadingWidth: 30,
       titleSpacing: 8,
       title: GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ContactInfoPage(chat: chat),
-            ),
-          );
-        },
+        onTap: () => _openContactInfo(),
         child: Row(
           children: [
             // Avatar
@@ -5340,14 +5457,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             size: const Size(26, 22),
             painter: _SidebarIconPainter(color: Colors.white),
           ),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ContactInfoPage(chat: chat),
-              ),
-            );
-          },
+          onPressed: () => _openContactInfo(),
         ),
         // FITUR: Menu Opsi Lanjutan (Titik Tiga Di Dalam Chat)
         // FUNGSI: Menampilkan dropdown menu di pojok kanan atas chat room untuk aksi tambahan pada tiket ini,

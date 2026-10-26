@@ -156,6 +156,37 @@ class ChatModel {
 enum MessageStatus { sent, delivered, read }
 enum MessageType { text, voice, image, video, document, sticker }
 
+/// Placeholder shown for WhatsApp messages that cannot be rendered in-app yet
+/// (edited messages, protocol messages, and empty/unsupported media payloads).
+const String kUnsupportedWhatsAppLabel =
+    "This message can't be displayed here yet. Please open WhatsApp on your phone to view this message";
+
+/// Returns true when [content] carries no readable text / media and should be
+/// treated as an unsupported WhatsApp message (edited, protocol, or empty file).
+bool isUnsupportedWhatsAppContent(String? content) {
+  if (content == null) return false;
+  final c = content.trim();
+  if (c.isEmpty) return true;
+  final lower = c.toLowerCase();
+  if (lower == '{}' || lower == '[]' || lower == 'null') return true;
+  if (lower == 'document(empty)' ||
+      lower == 'voice(empty)' ||
+      lower == 'image(empty)' ||
+      lower == 'video(empty)' ||
+      lower == 'audio(empty)') {
+    return true;
+  }
+  // Server-side markers used for deleted / unsupported protocol payloads.
+  if (lower.contains('site.inbox.deletedmessage')) return true;
+  if (lower.contains('message.whatsapp') && !_hasReadableText(lower)) return true;
+  return false;
+}
+
+bool _hasReadableText(String lower) {
+  if (lower.startsWith('{') || lower.startsWith('[')) return false;
+  return lower.replaceAll(RegExp(r'[^a-z0-9]'), '').isNotEmpty;
+}
+
 // =====================================================================
 // FITUR: Model Pesan (Message)
 // FILE: lib/core/model/message.dart
@@ -839,7 +870,7 @@ class Message {
             !content.startsWith('[') &&
             !content.toLowerCase().contains('site.inbox.deletedmessage');
         if (!hasReadableText) {
-          content = '⚠️ Pesan ini tidak dapat ditampilkan. Buka WhatsApp di HP untuk melihat pesan ini.';
+          content = kUnsupportedWhatsAppLabel;
         }
       }
     } else if (typeVal == '16' || typeVal == '3') {
@@ -851,7 +882,7 @@ class Message {
           !content.startsWith('[') &&
           !content.toLowerCase().contains('site.inbox.deletedmessage');
       if (!hasReadableText) {
-        content = '⚠️ Pesan ini tidak dapat ditampilkan. Buka WhatsApp di HP untuk melihat pesan ini.';
+        content = kUnsupportedWhatsAppLabel;
       }
     } else if (typeVal == '15' || typeVal == '11') {
       msgType = MessageType.text;
@@ -870,7 +901,7 @@ class Message {
           !content.startsWith('[') &&
           !content.toLowerCase().contains('site.inbox.deletedmessage');
       if (!hasReadableText) {
-        content = '⚠️ Pesan ini tidak dapat ditampilkan. Buka WhatsApp di HP untuk melihat pesan ini.';
+        content = kUnsupportedWhatsAppLabel;
       }
       debugPrint('⚠️ Message.fromJson: Unknown typeVal=$typeVal, content="${content.length > 50 ? content.substring(0, 50) : content}" -> treated as text');
     }

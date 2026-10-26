@@ -282,6 +282,13 @@ class Conversation {
       }
     }
 
+    // FIX (Issue 4): Pesan edit/protocol/document(empty)/file kosong → tampilkan placeholder Inggris
+    // alih-alih "📎 Lampiran" / fallback Indonesia.
+    if (isUnsupportedWhatsAppContent(finalLastMessage)) {
+      finalLastMessage = kUnsupportedWhatsAppLabel;
+      rawLastMessageType = '1';
+    }
+
     // Helper untuk mendeteksi apakah obrolan benar-benar Group atau Private (individu)
     bool resolveIsGroup() {
       // 1. Cek flag IsGrp atau GrpId resmi dari server NoBox (Chatrooms/List)

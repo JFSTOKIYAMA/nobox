@@ -3872,23 +3872,60 @@ class ChatProvider with ChangeNotifier {
     return false;
   }
 
-  Future<bool> resolveChat(String contactId, {String? accountId}) async {
+  /// Update status obrolan secara instan di memori lokal (optimistic update).
+  ///
+  /// Pencarian dilakukan secara fleksibel terhadap berbagai variasi ID yang
+  /// dikirim oleh pemanggil (id room, contactId/ctId, ctRealId, link, maupun
+  /// ID angka bersih). Hal ini mengatasi kasus pencarian index yang terlalu
+  /// kaku sehingga status tidak ter-update di UI secara real-time.
+  void updateChatStatus(String targetId, String newStatus, {String? agentName}) {
+    if (targetId.isEmpty) return;
+    final cleanNumeric = targetId.replaceAll(RegExp(r'[^0-9]'), '');
+
+    final index = _chats.indexWhere((c) {
+      if (c.id == targetId) return true;
+      if (c.contactId == targetId) return true;
+      if (c.ctRealId == targetId) return true;
+      if (c.link == targetId) return true;
+      if (cleanNumeric.isNotEmpty &&
+          c.id.replaceAll(RegExp(r'[^0-9]'), '') == cleanNumeric) {
+        return true;
+      }
+      return false;
+    });
+
+    if (index != -1) {
+      _chats[index] = _chats[index].copyWith(
+        status: newStatus,
+        agentName: agentName ?? _chats[index].agentName,
+      );
+      notifyListeners();
+    }
+  }
+
+  Future<bool> resolveChat(
+    String contactId, {
+    String? accountId,
+    String? agentName,
+  }) async {
+    // 1. Optimistic update langsung agar UI seketika berubah
+    updateChatStatus(contactId, 'Resolved', agentName: agentName);
+
+    // 2. Kirim ke API backend
     final response = await _chatService.resolveChat(
       contactId,
       accountId: accountId,
     );
-    if (!response.isError) {
-      // Immediately update local UI for snappy feel
-      final index = _chats.indexWhere((c) => c.id == contactId);
-      if (index != -1) {
-        _chats[index] = _chats[index].copyWith(status: 'Resolved');
-        notifyListeners();
-      }
-      return true;
+
+    if (response.isError) {
+      _error = response.error;
+      notifyListeners();
+      return false;
     }
-    _error = response.error;
-    notifyListeners();
-    return false;
+
+    // 3. Sinkronisasi latar belakang secara silent
+    refreshFirstPage(showLoading: false);
+    return true;
   }
 
   // ===========================================================================

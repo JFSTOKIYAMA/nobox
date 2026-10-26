@@ -5851,6 +5851,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
   void _markAsResolved() async {
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUser = authProvider.currentUser ?? '';
+    final currentAgentName = currentUser.isNotEmpty ? currentUser : 'Agent';
 
     debugPrint(
       '🔍 [DEBUG] _markAsResolved called with chat.id="${chat.id}", chat.contactId="${chat.contactId}", chat.ctRealId="${chat.ctRealId}", chat.link="${chat.link}"',
@@ -5861,15 +5864,22 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         resolveId == '0' ||
         resolveId == 'null' ||
         int.tryParse(resolveId.replaceAll(RegExp(r'[^0-9]'), '')) == null) {
-      if (int.tryParse(chat.contactId.replaceAll(RegExp(r'[^0-9]'), '')) !=
-              null &&
-          chat.contactId != '0') {
+      if (chat.contactId.isNotEmpty && chat.contactId != '0') {
         resolveId = chat.contactId;
-      } else if (int.tryParse(chat.link.replaceAll(RegExp(r'[^0-9]'), '')) !=
-              null &&
-          chat.link != '0') {
+      } else if (chat.link.isNotEmpty && chat.link != '0') {
         resolveId = chat.link;
       }
+    }
+
+    // Optimistic update pada state halaman detail dan ChatProvider agar
+    // status "Resolved" beserta nama resolver langsung tampil tanpa menunggu
+    // muat ulang dari server.
+    setState(() {
+      chat = chat.copyWith(status: 'Resolved', agentName: currentAgentName);
+    });
+    chatProvider.updateChatStatus(chat.id, 'Resolved', agentName: currentAgentName);
+    if (resolveId != chat.id) {
+      chatProvider.updateChatStatus(resolveId, 'Resolved', agentName: currentAgentName);
     }
 
     try {
@@ -5882,7 +5892,8 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Conversation marked as resolved')),
           );
-          chatProvider.fetchChats();
+          // Sinkronkan daftar chat di background tanpa memblokir
+          chatProvider.refreshFirstPage(showLoading: false);
           Navigator.pop(context);
         } else {
           ScaffoldMessenger.of(

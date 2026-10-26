@@ -4420,6 +4420,24 @@ class _ChatListPageState extends State<ChatListPage>
                 ScaffoldMessenger.of(this.context).showSnackBar(
                   const SnackBar(content: Text('Menyelesaikan chat...')),
                 );
+
+                // Nama agen yang sedang login untuk dicatat sebagai resolver.
+                final authProvider = Provider.of<AuthProvider>(
+                  this.context,
+                  listen: false,
+                );
+                final currentUser = authProvider.currentUser ?? '';
+                final currentAgentName = currentUser.isNotEmpty
+                    ? currentUser
+                    : 'Agent';
+
+                // Optimistic update langsung agar badge status seketika berubah.
+                chatProvider.updateChatStatus(
+                  chat.id,
+                  'Resolved',
+                  agentName: currentAgentName,
+                );
+
                 String resolveId = chat.id;
                 if (resolveId.isEmpty ||
                     resolveId == '0' ||
@@ -4440,9 +4458,17 @@ class _ChatListPageState extends State<ChatListPage>
                     resolveId = chat.link;
                   }
                 }
+                if (resolveId != chat.id) {
+                  chatProvider.updateChatStatus(
+                    resolveId,
+                    'Resolved',
+                    agentName: currentAgentName,
+                  );
+                }
                 final success = await chatProvider.resolveChat(
                   resolveId,
                   accountId: chat.accountId,
+                  agentName: currentAgentName,
                 );
                 if (mounted) {
                   ScaffoldMessenger.of(this.context).hideCurrentSnackBar();

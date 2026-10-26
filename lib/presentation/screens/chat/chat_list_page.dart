@@ -2400,6 +2400,14 @@ class _ChatListPageState extends State<ChatListPage>
                                                             ? manualInput
                                                             : 'New Chat'));
 
+                                            final String normalizedChId =
+                                                isSelectedChannelTelegram
+                                                ? '2'
+                                                : (isSelectedChannelWhatsApp
+                                                      ? '1'
+                                                      : channelIdInt
+                                                            .toString());
+
                                             final newChat = ChatModel(
                                               id: newRoomIdStr,
                                               contactId: isGroup
@@ -2426,7 +2434,7 @@ class _ChatListPageState extends State<ChatListPage>
                                                   selectedChannel ?? '',
                                               isPinned: false,
                                               isArchived: false,
-                                              chId: channelIdInt.toString(),
+                                              chId: normalizedChId,
                                               funnel: '',
                                               isGroup: isGroup,
                                               isBlocked: false,

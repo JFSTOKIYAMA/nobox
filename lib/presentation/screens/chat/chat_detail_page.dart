@@ -2513,11 +2513,22 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
       // Channel & Account Isolation Guard: Cegah pesan channel/akun lain masuk (hanya untuk WhatsApp / non-Telegram)
       if (!isTelegram) {
+        bool isSameChannel(String c1, String c2) {
+          if (c1 == c2) return true;
+          final isWa1 = c1 == '1' || c1 == '1557' || c1 == '1561';
+          final isWa2 = c2 == '1' || c2 == '1557' || c2 == '1561';
+          if (isWa1 && isWa2) return true;
+          final isTg1 = c1 == '2';
+          final isTg2 = c2 == '2';
+          if (isTg1 && isTg2) return true;
+          return false;
+        }
+
         final incomingChId =
             (messageData['ChId'] ?? messageData['ch_id'])?.toString() ?? '';
         if (incomingChId.isNotEmpty &&
             chat.chId.isNotEmpty &&
-            incomingChId != chat.chId) {
+            !isSameChannel(incomingChId, chat.chId)) {
           debugPrint(
             'ChatDetailPage: 🛡️ Ignored message from different channel: incoming $incomingChId vs current ${chat.chId}',
           );
@@ -4311,10 +4322,21 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   // FUNGSI: Mengambil AccountId yang benar untuk Telegram/WhatsApp karena chat.accountId bisa saja kosong atau menunjuk ke bot lama yang tidak aktif.
   String _getResolvedAccountId(ChatProvider chatProvider) {
     String resolvedAccountId = chat.accountId;
-    final isTelegram =
-        chat.chId == '2' ||
-        chat.channelType.toLowerCase().contains('telegram') ||
-        chat.channelName.toLowerCase().contains('telegram');
+    final chIdStr = chat.chId.toString().trim();
+    final chTypeStr = chat.channelType.toLowerCase();
+    final chNameStr = chat.channelName.toLowerCase();
+    final isTelegram = chIdStr == '2' ||
+        chTypeStr.contains('telegram') ||
+        chTypeStr.contains('tg') ||
+        chNameStr.contains('telegram') ||
+        chNameStr.contains('tg');
+    final isWa = chIdStr == '1' ||
+        chIdStr == '1557' ||
+        chIdStr == '1561' ||
+        chTypeStr.contains('whatsapp') ||
+        chTypeStr.contains('wa') ||
+        chNameStr.contains('whatsapp') ||
+        chNameStr.contains('wa');
 
     final accounts = chatProvider.cachedAccounts;
     bool isAccountActive(String id) {
@@ -4346,12 +4368,27 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                   note.contains('connect'));
           if (!isConnected) return false;
 
-          final ch = acc['Channel']?.toString();
+          final ch = acc['Channel']?.toString() ?? '';
           final code = (acc['Code']?.toString() ?? '').toLowerCase();
+          final accName = (acc['Name']?.toString() ?? '').toLowerCase();
           if (isTelegram) {
-            return ch == '2' || code.contains('telegram');
+            return ch == '2' ||
+                ch == chIdStr ||
+                code.contains('telegram') ||
+                code.contains('tg') ||
+                accName.contains('telegram');
           }
-          return ch == '1' || code.contains('whatsapp');
+          if (isWa) {
+            return ch == '1' ||
+                ch == '1557' ||
+                ch == '1561' ||
+                ch == chIdStr ||
+                code.contains('whatsapp') ||
+                code.contains('wa') ||
+                accName.contains('wa') ||
+                accName.contains('whatsapp');
+          }
+          return false;
         }).firstOrNull;
         if (activeAcc != null && activeAcc['Id'] != null) {
           resolvedAccountId = activeAcc['Id'].toString();

@@ -3336,10 +3336,21 @@ class ChatProvider with ChangeNotifier {
     String resolvedAccountId = chat.accountId;
 
     // --- SMART TELEGRAM & FALLBACK ACCOUNT ID ---
-    final isTelegram =
-        chat.chId == '2' ||
-        chat.channelType.toLowerCase().contains('telegram') ||
-        chat.channelName.toLowerCase().contains('telegram');
+    final chIdStr = chat.chId.toString().trim();
+    final chTypeStr = chat.channelType.toLowerCase();
+    final chNameStr = chat.channelName.toLowerCase();
+    final isTelegram = chIdStr == '2' ||
+        chTypeStr.contains('telegram') ||
+        chTypeStr.contains('tg') ||
+        chNameStr.contains('telegram') ||
+        chNameStr.contains('tg');
+    final isWa = chIdStr == '1' ||
+        chIdStr == '1557' ||
+        chIdStr == '1561' ||
+        chTypeStr.contains('whatsapp') ||
+        chTypeStr.contains('wa') ||
+        chNameStr.contains('whatsapp') ||
+        chNameStr.contains('wa');
 
     bool isAccConnected(Map<String, dynamic> acc) {
       final status = acc['Status']?.toString();
@@ -3371,19 +3382,26 @@ class ChatProvider with ChangeNotifier {
           final activeAcc = _cachedAccounts!.where((acc) {
             final ch = acc['Channel']?.toString() ?? '';
             final code = (acc['Code']?.toString() ?? '').toLowerCase();
+            final accName = (acc['Name']?.toString() ?? '').toLowerCase();
             final connected = isAccConnected(acc);
             if (!connected) return false;
 
             if (isTelegram) {
-              return ch == '2' || code.contains('telegram');
+              return ch == '2' ||
+                  ch == chIdStr ||
+                  code.contains('telegram') ||
+                  code.contains('tg') ||
+                  accName.contains('telegram');
             }
-            final isWa =
-                chat.chId == '1' ||
-                chat.channelType.toLowerCase().contains('whatsapp') ||
-                chat.channelName.toLowerCase().contains('whatsapp') ||
-                chat.channelType.toLowerCase() == 'wa';
             if (isWa) {
-              return ch == '1' || code.contains('whatsapp') || code == 'wa';
+              return ch == '1' ||
+                  ch == '1557' ||
+                  ch == '1561' ||
+                  ch == chIdStr ||
+                  code.contains('whatsapp') ||
+                  code.contains('wa') ||
+                  accName.contains('wa') ||
+                  accName.contains('whatsapp');
             }
             return false;
           }).firstOrNull;
@@ -3443,13 +3461,13 @@ class ChatProvider with ChangeNotifier {
         return num != null && num > 0;
       }
       
-      // Prioritas: contactId (CtId/IdLink) → ctRealId → link → strip dari chat.id
-      if (isValidDbId(chat.contactId)) {
-        idLinkValue = chat.contactId;
+      // Prioritas: link (IdLink) → ctRealId → contactId → strip dari chat.id
+      if (isValidDbId(chat.link)) {
+        idLinkValue = chat.link;
       } else if (isValidDbId(chat.ctRealId)) {
         idLinkValue = chat.ctRealId;
-      } else if (isValidDbId(chat.link)) {
-        idLinkValue = chat.link;
+      } else if (isValidDbId(chat.contactId)) {
+        idLinkValue = chat.contactId;
       } else {
         // Fallback terakhir: extract numeric part dari chat.id (format "tenantId_roomId")
         final extracted = chat.id
@@ -3458,7 +3476,7 @@ class ChatProvider with ChangeNotifier {
         if (extracted.isNotEmpty && isValidDbId(extracted)) {
           idLinkValue = extracted;
         } else {
-          idLinkValue = chat.contactId.isNotEmpty ? chat.contactId : chat.link;
+          idLinkValue = chat.link.isNotEmpty ? chat.link : chat.contactId;
         }
       }
       

@@ -2069,7 +2069,14 @@ class ChatService {
       if (isBad(roomIdStr)) roomIdStr = request.groupId ?? roomIdStr;
       if (isBad(roomIdStr)) roomIdStr = request.extId ?? roomIdStr;
       if (isBad(roomIdStr)) roomIdStr = request.contactId ?? roomIdStr;
-      if (isBad(roomIdStr)) {
+
+      // Bersihkan RoomId dari format komposit (tenantId_roomId) dan karakter asing.
+      String cleanRoomId = roomIdStr.trim();
+      if (cleanRoomId.contains('_')) {
+        cleanRoomId = cleanRoomId.split('_').last;
+      }
+      cleanRoomId = cleanRoomId.replaceAll(RegExp(r'[^0-9\-]'), '');
+      if (cleanRoomId.isEmpty || cleanRoomId == '0' || cleanRoomId == 'null') {
         debugPrint(
           'ChatService: ❌ sendMessage DIBATALKAN: RoomId tidak valid ($roomIdStr).',
         );
@@ -2078,9 +2085,10 @@ class ChatService {
 
       debugPrint('ChatService: ┌── sendMessage (REST API) ──');
       debugPrint('ChatService: │ RoomId: $roomIdStr');
+      debugPrint('ChatService: │ CleanRoomId: $cleanRoomId');
       debugPrint('ChatService: │ Content: $content');
       debugPrint(
-        'ChatService: │ Endpoint: ${AppConfig.inboxSendEndpoint}?Id=$roomIdStr',
+        'ChatService: │ Endpoint: ${AppConfig.inboxSendEndpoint}?Id=$cleanRoomId',
       );
 
       // Mentor instruction: AccountIds must be a single string (comma-separated if multiple), NOT an array.
@@ -2090,7 +2098,20 @@ class ChatService {
         safeAccountId = request.accountId!;
       }
 
-      final int channelId = int.tryParse(request.channelId ?? '1') ?? 1;
+      final String channelIdRaw = (request.channelId ?? '1').trim();
+      final bool isTelegramChannel =
+          request.isTelegram ||
+          channelIdRaw == '2' ||
+          channelIdRaw.toLowerCase() == 'telegram';
+      final bool isWaChannel =
+          channelIdRaw == '1' ||
+          channelIdRaw == '1557' ||
+          channelIdRaw == '1561' ||
+          channelIdRaw.toLowerCase() == 'whatsapp' ||
+          channelIdRaw.toLowerCase() == 'wa';
+      final int channelId = isTelegramChannel
+          ? 2
+          : (isWaChannel ? 1 : (int.tryParse(channelIdRaw) ?? 1));
 
       if (safeAccountId.isEmpty && _accountIdByChannel.containsKey(channelId)) {
         safeAccountId = _accountIdByChannel[channelId]!;
@@ -2145,8 +2166,7 @@ class ChatService {
                 }
               }
               final idExt = entity['IdExt']?.toString() ?? '';
-              final int chId = int.tryParse(request.channelId ?? '1') ?? 1;
-              if (chId == 2 && idExt.isNotEmpty) {
+              if (channelId == 2 && idExt.isNotEmpty) {
                 extId = idExt;
               } else {
                 extId = (extId.isNotEmpty ? extId : idExt);
@@ -2233,7 +2253,7 @@ class ChatService {
       debugPrint('ChatService: └──────────────────────────────');
 
       final response = await _apiClient.post(
-        'https://id.nobox.ai/Inbox/Send?Id=${roomIdStr ?? '0'}',
+        'https://id.nobox.ai/Inbox/Send?Id=$cleanRoomId',
         data: payload,
       );
 

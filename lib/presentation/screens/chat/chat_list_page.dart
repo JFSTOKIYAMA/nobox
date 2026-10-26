@@ -44,11 +44,7 @@ class ChatListPage extends StatefulWidget {
   final void Function(ChatModel)? onChatSelected;
   final String? selectedChatId;
 
-  const ChatListPage({
-    super.key,
-    this.onChatSelected,
-    this.selectedChatId,
-  });
+  const ChatListPage({super.key, this.onChatSelected, this.selectedChatId});
 
   @override
   State<ChatListPage> createState() => _ChatListPageState();
@@ -123,7 +119,7 @@ class _ChatListPageState extends State<ChatListPage>
     final chatProvider = context.read<ChatProvider>();
     final themeProvider = Provider.of<ThemeProvider>(context);
     final isDark = themeProvider.isDarkMode;
-    
+
     return AppBar(
       backgroundColor: isDark ? AppTheme.darkSurface : Colors.blue.shade600,
       elevation: 0,
@@ -219,9 +215,7 @@ class _ChatListPageState extends State<ChatListPage>
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(
-                              '$count chat(s) archived',
-                            ),
+                            content: Text('$count chat(s) archived'),
                             backgroundColor: Colors.blue.shade700,
                           ),
                         );
@@ -427,14 +421,16 @@ class _ChatListPageState extends State<ChatListPage>
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => const user_profile.UserProfilePage(),
+                                builder: (context) =>
+                                    const user_profile.UserProfilePage(),
                               ),
                             );
                           } else if (value == 'profile') {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => const profile.ProfilePage(),
+                                builder: (context) =>
+                                    const profile.ProfilePage(),
                               ),
                             );
                           } else if (value == 'archived') {
@@ -473,7 +469,9 @@ class _ChatListPageState extends State<ChatListPage>
                                 Icon(
                                   Icons.account_circle,
                                   size: 24,
-                                  color: isDark ? Colors.white70 : Colors.black87,
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.black87,
                                 ),
                                 const SizedBox(width: 16),
                                 const Text(
@@ -490,7 +488,9 @@ class _ChatListPageState extends State<ChatListPage>
                                 Icon(
                                   isDark ? Icons.light_mode : Icons.dark_mode,
                                   size: 24,
-                                  color: isDark ? Colors.white70 : Colors.black87,
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.black87,
                                 ),
                                 const SizedBox(width: 16),
                                 Text(
@@ -507,7 +507,9 @@ class _ChatListPageState extends State<ChatListPage>
                                 Icon(
                                   Icons.archive,
                                   size: 24,
-                                  color: isDark ? Colors.white70 : Colors.black87,
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.black87,
                                 ),
                                 const SizedBox(width: 16),
                                 const Text(
@@ -524,7 +526,9 @@ class _ChatListPageState extends State<ChatListPage>
                                 Icon(
                                   Icons.info_outline,
                                   size: 24,
-                                  color: isDark ? Colors.white70 : Colors.black87,
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.black87,
                                 ),
                                 const SizedBox(width: 16),
                                 const Text(
@@ -541,7 +545,9 @@ class _ChatListPageState extends State<ChatListPage>
                                 Icon(
                                   Icons.help_outline,
                                   size: 24,
-                                  color: isDark ? Colors.white70 : Colors.black87,
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.black87,
                                 ),
                                 const SizedBox(width: 16),
                                 const Text(
@@ -612,13 +618,18 @@ class _ChatListPageState extends State<ChatListPage>
               }
               return Container(
                 width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
                 color: Colors.orange.shade50,
                 child: Row(
                   children: [
-                    Icon(Icons.error_outline,
-                        size: 16, color: Colors.orange.shade800),
+                    Icon(
+                      Icons.error_outline,
+                      size: 16,
+                      color: Colors.orange.shade800,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -653,7 +664,9 @@ class _ChatListPageState extends State<ChatListPage>
                 final isSearching = chatProvider.searchQuery.isNotEmpty;
                 final chats = chatProvider.chats;
                 final serverContacts = isSearching
-                    ? chatProvider.searchServerContacts(chatProvider.searchQuery)
+                    ? chatProvider.searchServerContacts(
+                        chatProvider.searchQuery,
+                      )
                     : <Map<String, dynamic>>[];
 
                 // Filter server contacts agar tidak menduplikasi obrolan aktif yang sudah tampil di atas
@@ -669,8 +682,7 @@ class _ChatListPageState extends State<ChatListPage>
                       .toString()
                       .trim()
                       .toLowerCase();
-                  final cId =
-                      (contact['Id'] ?? contact['id'] ?? '').toString();
+                  final cId = (contact['Id'] ?? contact['id'] ?? '').toString();
                   if (activeChatNames.contains(cName)) return false;
                   if (cId.isNotEmpty && activeContactIds.contains(cId))
                     return false;
@@ -764,12 +776,7 @@ class _ChatListPageState extends State<ChatListPage>
                     }
                     for (final chat in chats) {
                       searchItems.add(
-                        _buildChatTile(
-                          context,
-                          chat,
-                          chatProvider,
-                          isDark,
-                        ),
+                        _buildChatTile(context, chat, chatProvider, isDark),
                       );
                     }
                   }
@@ -903,10 +910,7 @@ class _ChatListPageState extends State<ChatListPage>
                   color: Colors.redAccent,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                constraints: const BoxConstraints(
-                  minWidth: 16,
-                  minHeight: 16,
-                ),
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                 child: Center(
                   child: Text(
                     unreadCount.toString(),
@@ -939,11 +943,7 @@ class _ChatListPageState extends State<ChatListPage>
       color: isDark ? const Color(0xFF192229) : Colors.grey.shade100,
       child: Row(
         children: [
-          Icon(
-            icon,
-            size: 15,
-            color: Colors.blue.shade600,
-          ),
+          Icon(icon, size: 15, color: Colors.blue.shade600),
           const SizedBox(width: 8),
           Text(
             title,
@@ -984,18 +984,20 @@ class _ChatListPageState extends State<ChatListPage>
     bool isDark,
   ) {
     final name = (contact['Name'] ?? contact['Nm'] ?? 'Contact').toString();
-    final phone = (contact['Phone'] ??
-            contact['Hp'] ??
-            contact['Mobile'] ??
-            contact['Telp'] ??
-            '')
-        .toString();
-    final photo = (contact['Photo'] ??
-            contact['Img'] ??
-            contact['AvatarUrl'] ??
-            contact['Picture'] ??
-            '')
-        .toString();
+    final phone =
+        (contact['Phone'] ??
+                contact['Hp'] ??
+                contact['Mobile'] ??
+                contact['Telp'] ??
+                '')
+            .toString();
+    final photo =
+        (contact['Photo'] ??
+                contact['Img'] ??
+                contact['AvatarUrl'] ??
+                contact['Picture'] ??
+                '')
+            .toString();
     final contactId = (contact['Id'] ?? contact['id'] ?? '').toString();
 
     return InkWell(
@@ -1004,10 +1006,13 @@ class _ChatListPageState extends State<ChatListPage>
         final allChats = chatProvider.allChats;
         ChatModel? existingChat;
         for (final c in allChats) {
-          final isSameId = contactId.isNotEmpty &&
+          if (c.isArchived)
+            continue; // PENTING: Jangan pilih chat yang sudah diarsip!
+          final isSameId =
+              contactId.isNotEmpty &&
               (c.contactId == contactId || c.ctRealId == contactId);
-          final isSameName = name.trim().toLowerCase() ==
-              c.sender.trim().toLowerCase();
+          final isSameName =
+              name.trim().toLowerCase() == c.sender.trim().toLowerCase();
           if (isSameId || isSameName) {
             existingChat = c;
             break;
@@ -1048,11 +1053,7 @@ class _ChatListPageState extends State<ChatListPage>
         ),
         child: Row(
           children: [
-            AuthenticatedAvatar(
-              imageUrl: photo,
-              size: 44,
-              isGroup: false,
-            ),
+            AuthenticatedAvatar(imageUrl: photo, size: 44, isGroup: false),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -1064,9 +1065,7 @@ class _ChatListPageState extends State<ChatListPage>
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 15,
-                      color: isDark
-                          ? AppTheme.darkTextPrimary
-                          : Colors.black87,
+                      color: isDark ? AppTheme.darkTextPrimary : Colors.black87,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1102,10 +1101,7 @@ class _ChatListPageState extends State<ChatListPage>
             ),
             const SizedBox(width: 8),
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 6,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: Colors.blue.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(16),
@@ -1236,7 +1232,8 @@ class _ChatListPageState extends State<ChatListPage>
     String selectedChat = 'Private';
     String? selectedChannel;
     String? selectedAccount;
-    String selectedTo = 'Contact'; // Contact, Link, Manual (or Group, Link, Manual)
+    String selectedTo =
+        'Contact'; // Contact, Link, Manual (or Group, Link, Manual)
     String? selectedContact;
     String? selectedGroup;
     String manualInput = '';
@@ -1290,15 +1287,12 @@ class _ChatListPageState extends State<ChatListPage>
                       contacts = contactResp.data!;
                       if (initialContactId != null ||
                           initialContactName != null) {
-                        final cNames = _toUniqueNames(
-                          contacts,
-                          ['Name', 'Nm'],
-                        );
+                        final cNames = _toUniqueNames(contacts, ['Name', 'Nm']);
                         for (int i = 0; i < contacts.length; i++) {
                           final cId = contacts[i]['Id']?.toString();
-                          final cNm = (contacts[i]['Name'] ??
-                                  contacts[i]['Nm'])
-                              ?.toString() ??
+                          final cNm =
+                              (contacts[i]['Name'] ?? contacts[i]['Nm'])
+                                  ?.toString() ??
                               '';
                           if ((initialContactId != null &&
                                   cId == initialContactId) ||
@@ -1382,20 +1376,45 @@ class _ChatListPageState extends State<ChatListPage>
             ]);
             List<Map<String, dynamic>> filteredAccounts = accounts;
             String? selectedChannelId;
+            String? channelPlatformId;
             bool isSelectedChannelTelegram = false;
             bool isSelectedChannelWhatsApp = false;
 
             if (selectedChannel != null) {
-              final selectedChannelIndex = channelNames.indexOf(selectedChannel!);
+              final selectedChannelIndex = channelNames.indexOf(
+                selectedChannel!,
+              );
               if (selectedChannelIndex != -1) {
                 final channelObj = channels[selectedChannelIndex];
-                selectedChannelId = channelObj['Id']?.toString() ?? channelObj['ChId']?.toString();
-                final chNm = (channelObj['Nm'] ?? channelObj['Name'] ?? channelObj['ChannelName'] ?? selectedChannel!).toString().toLowerCase();
-                isSelectedChannelTelegram = selectedChannelId == '2' || chNm.contains('telegram') || chNm.contains('tg');
-                isSelectedChannelWhatsApp = selectedChannelId == '1' || selectedChannelId == '1557' || selectedChannelId == '1561' || chNm.contains('whatsapp') || chNm == 'wa' || chNm.startsWith('wa ') || chNm.endsWith(' wa');
+                selectedChannelId =
+                    channelObj['Id']?.toString() ??
+                    channelObj['ChId']?.toString();
+                channelPlatformId = channelObj['ChId']?.toString();
+                final chNm =
+                    (channelObj['Nm'] ??
+                            channelObj['Name'] ??
+                            channelObj['ChannelName'] ??
+                            selectedChannel!)
+                        .toString()
+                        .toLowerCase();
+                isSelectedChannelTelegram =
+                    selectedChannelId == '2' ||
+                    chNm.contains('telegram') ||
+                    chNm.contains('tg');
+                isSelectedChannelWhatsApp =
+                    selectedChannelId == '1' ||
+                    selectedChannelId == '1557' ||
+                    selectedChannelId == '1561' ||
+                    chNm.contains('whatsapp') ||
+                    chNm == 'wa' ||
+                    chNm.startsWith('wa ') ||
+                    chNm.endsWith(' wa');
                 if (selectedChannelId != null) {
                   filteredAccounts = accounts.where((acc) {
-                    final accChannel = acc['Channel']?.toString() ?? acc['ChId']?.toString() ?? acc['ChannelId']?.toString();
+                    final accChannel =
+                        acc['Channel']?.toString() ??
+                        acc['ChId']?.toString() ??
+                        acc['ChannelId']?.toString();
                     return accChannel == selectedChannelId;
                   }).toList();
                 }
@@ -1407,37 +1426,76 @@ class _ChatListPageState extends State<ChatListPage>
             List<Map<String, dynamic>> filteredGroups = [];
             if (selectedChannel != null) {
               final filteredAccountIds = filteredAccounts
-                  .map((a) => (a['Id'] ?? a['id'] ?? a['AccountId'] ?? a['acc_id'])?.toString())
+                  .map(
+                    (a) => (a['Id'] ?? a['id'] ?? a['AccountId'] ?? a['acc_id'])
+                        ?.toString(),
+                  )
                   .where((id) => id != null && id.isNotEmpty)
                   .toSet();
 
               filteredGroups = groups.where((grp) {
                 // 1. Cek Channel ID langsung dari data grup jika ada
-                final grpChId = (grp['Channel'] ?? grp['ChId'] ?? grp['ChannelId'] ?? grp['channel_id'])?.toString();
-                if (grpChId != null && grpChId.isNotEmpty && selectedChannelId != null) {
+                final grpChId =
+                    (grp['Channel'] ??
+                            grp['ChId'] ??
+                            grp['ChannelId'] ??
+                            grp['channel_id'])
+                        ?.toString();
+                if (grpChId != null &&
+                    grpChId.isNotEmpty &&
+                    selectedChannelId != null) {
                   if (grpChId == selectedChannelId) return true;
                 }
 
                 // 2. Cek apakah grup terikat ke salah satu akun dari channel yang dipilih
-                final grpAccId = (grp['AccountId'] ?? grp['Account'] ?? grp['AccId'] ?? grp['account_id'])?.toString();
-                if (grpAccId != null && grpAccId.isNotEmpty && filteredAccountIds.isNotEmpty) {
+                final grpAccId =
+                    (grp['AccountId'] ??
+                            grp['Account'] ??
+                            grp['AccId'] ??
+                            grp['account_id'])
+                        ?.toString();
+                if (grpAccId != null &&
+                    grpAccId.isNotEmpty &&
+                    filteredAccountIds.isNotEmpty) {
                   if (filteredAccountIds.contains(grpAccId)) return true;
                 }
 
                 // 3. Cek pola unik identifier / LinkTmp / JID / GroupId / Nama
-                final idStr = (grp['Id'] ?? grp['id'] ?? grp['GroupId'] ?? grp['grp_id'])?.toString() ?? '';
-                final linkStr = (grp['LinkTmp'] ?? grp['Link'] ?? grp['link'] ?? grp['CtRealId'] ?? grp['Jid'] ?? '')?.toString().toLowerCase() ?? '';
-                final grpName = (grp['Name'] ?? grp['DisplayName'] ?? grp['Title'] ?? grp['Nm'] ?? '')?.toString().toLowerCase() ?? '';
+                final idStr =
+                    (grp['Id'] ?? grp['id'] ?? grp['GroupId'] ?? grp['grp_id'])
+                        ?.toString() ??
+                    '';
+                final linkStr =
+                    (grp['LinkTmp'] ??
+                            grp['Link'] ??
+                            grp['link'] ??
+                            grp['CtRealId'] ??
+                            grp['Jid'] ??
+                            '')
+                        ?.toString()
+                        .toLowerCase() ??
+                    '';
+                final grpName =
+                    (grp['Name'] ??
+                            grp['DisplayName'] ??
+                            grp['Title'] ??
+                            grp['Nm'] ??
+                            '')
+                        ?.toString()
+                        .toLowerCase() ??
+                    '';
                 final combined = '$idStr $linkStr $grpName';
 
-                final isTelegramGroup = idStr.trim().startsWith('-') ||
+                final isTelegramGroup =
+                    idStr.trim().startsWith('-') ||
                     linkStr.trim().startsWith('-') ||
                     linkStr.contains('t.me') ||
                     linkStr.contains('telegram') ||
                     grpName.contains('telegram') ||
                     grpChId == '2';
 
-                final isWhatsAppGroup = combined.contains('@g.us') ||
+                final isWhatsAppGroup =
+                    combined.contains('@g.us') ||
                     combined.contains('@group') ||
                     linkStr.contains('whatsapp') ||
                     grpName.contains('whatsapp') ||
@@ -1452,7 +1510,8 @@ class _ChatListPageState extends State<ChatListPage>
                 } else if (isSelectedChannelWhatsApp) {
                   if (isTelegramGroup) return false;
                   if (isWhatsAppGroup) return true;
-                  return !idStr.trim().startsWith('-') && !linkStr.trim().startsWith('-');
+                  return !idStr.trim().startsWith('-') &&
+                      !linkStr.trim().startsWith('-');
                 }
 
                 if (selectedChannelId != null && grpChId != null) {
@@ -1476,36 +1535,83 @@ class _ChatListPageState extends State<ChatListPage>
               'Phone',
             ]);
             // FILTER KONTAK BERDASARKAN CHANNEL YANG DIPILIH:
-            // Kontak hanya muncul jika memiliki LeadLinks/Channel yang cocok dengan channel terpilih.
+            // Cocokkan ID database channel maupun platform code (ChId) dari
+            // channel. Kontak tanpa LeadLinks tetap valid bila memiliki
+            // nomor/username sesuai platform yang dipilih.
             List<Map<String, dynamic>> filteredContacts = contacts;
             if (selectedChannelId != null) {
               filteredContacts = contacts.where((ct) {
                 final leadLinks = ct['LeadLinks'];
-                if (leadLinks is List && leadLinks.isNotEmpty) {
+                final hasLeadLinks = leadLinks is List && leadLinks.isNotEmpty;
+                if (hasLeadLinks) {
                   for (final l in leadLinks) {
                     if (l is Map) {
-                      final lChId = (l['ChId'] ??
-                              l['Ch'] ??
-                              l['ChannelId'] ??
-                              l['chId'])
-                          ?.toString();
-                      if (lChId != null &&
-                          lChId.isNotEmpty &&
-                          lChId == selectedChannelId) {
-                        return true;
-                      }
+                      final lChId =
+                          (l['ChId'] ?? l['Ch'] ?? l['ChannelId'] ?? l['chId'])
+                              ?.toString();
+                      if (lChId == null || lChId.isEmpty) continue;
+                      final isWaLink =
+                          lChId == '1' || lChId == '1557' || lChId == '1561';
+                      final isTgLink = lChId == '2';
+                      final isChannelMatch =
+                          lChId == selectedChannelId ||
+                          (channelPlatformId != null &&
+                              lChId == channelPlatformId) ||
+                          (isSelectedChannelWhatsApp && isWaLink) ||
+                          (isSelectedChannelTelegram && isTgLink);
+                      if (isChannelMatch) return true;
                     }
                   }
                   return false;
                 }
-                final ctChId = (ct['Channel'] ??
-                        ct['ChId'] ??
-                        ct['ChannelId'] ??
-                        ct['chId'])
-                    ?.toString();
-                return ctChId != null && ctChId == selectedChannelId;
+
+                // Kontak tanpa LeadLinks: cek properti Channel di root bila ada
+                final ctChId =
+                    (ct['Channel'] ??
+                            ct['ChId'] ??
+                            ct['ChannelId'] ??
+                            ct['chId'])
+                        ?.toString();
+                if (ctChId != null &&
+                    ctChId.isNotEmpty &&
+                    (ctChId == selectedChannelId ||
+                        (channelPlatformId != null &&
+                            ctChId == channelPlatformId))) {
+                  return true;
+                }
+
+                // Fallback berbasis nomor/username sesuai platform
+                final phone =
+                    (ct['Hp'] ??
+                            ct['Phone'] ??
+                            ct['Mobile'] ??
+                            ct['Telp'] ??
+                            ct['LinkTmp'])
+                        ?.toString();
+                final username =
+                    (ct['ExtId'] ??
+                            ct['CtIdExt'] ??
+                            ct['Username'] ??
+                            ct['LinkTmp'])
+                        ?.toString();
+                if (isSelectedChannelWhatsApp) {
+                  return phone != null && phone.isNotEmpty;
+                }
+                if (isSelectedChannelTelegram) {
+                  return username != null && username.isNotEmpty;
+                }
+                return false;
               }).toList();
+
+              // SOFT FALLBACK: jangan biarkan daftar kontak kosong sehingga
+              // pengguna tidak terkunci pada pesan "No contacts for this channel".
+              if (filteredContacts.isEmpty) {
+                filteredContacts = contacts;
+              }
             }
+            debugPrint(
+              'FilterContacts: total=${contacts.length}, selectedChannelId=$selectedChannelId, isWA=$isSelectedChannelWhatsApp, isTG=$isSelectedChannelTelegram, result=${filteredContacts.length}',
+            );
             final contactNames = _toUniqueNames(filteredContacts, [
               'Name',
               'CtNm',
@@ -1657,7 +1763,9 @@ class _ChatListPageState extends State<ChatListPage>
                             setDialogState(() => selectedAccount = val);
                           },
                           enabled: selectedChannel != null,
-                          hintText: selectedChannel != null ? '--select--' : 'Select Channel first',
+                          hintText: selectedChannel != null
+                              ? '--select--'
+                              : 'Select Channel first',
                         ),
 
                         // Tombol Radio untuk Pilihan Tujuan (To)
@@ -1717,7 +1825,9 @@ class _ChatListPageState extends State<ChatListPage>
                                             selectedChat == 'Group'
                                                 ? 'Group'
                                                 : 'Contact',
-                                            style: const TextStyle(fontSize: 14),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -1789,9 +1899,12 @@ class _ChatListPageState extends State<ChatListPage>
                             enabled: selectedChannel != null,
                             hintText: selectedChannel == null
                                 ? 'Select Channel first'
-                                : (groupNames.isEmpty ? 'No groups for this channel' : '--select--'),
+                                : (groupNames.isEmpty
+                                      ? 'No groups for this channel'
+                                      : '--select--'),
                           )
-                        else if (selectedChat != 'Group' && selectedTo == 'Contact')
+                        else if (selectedChat != 'Group' &&
+                            selectedTo == 'Contact')
                           buildDropdownRow(
                             'Contact',
                             selectedContact,
@@ -1802,7 +1915,9 @@ class _ChatListPageState extends State<ChatListPage>
                             enabled: selectedChannel != null,
                             hintText: selectedChannel == null
                                 ? 'Select Channel first'
-                                : (contactNames.isEmpty ? 'No contacts for this channel' : '--select--'),
+                                : (contactNames.isEmpty
+                                      ? 'No contacts for this channel'
+                                      : '--select--'),
                           )
                         else if (selectedTo == 'Manual')
                           Padding(
@@ -1906,387 +2021,499 @@ class _ChatListPageState extends State<ChatListPage>
                             const SizedBox(width: 12),
                             Expanded(
                               child: ElevatedButton(
-                                onPressed: isCreatingRoom ? null : () async {
-                                  void showValidationToast(
-                                    String title,
-                                    String msg,
-                                  ) {
-                                    debugPrint('ChatList: Validation Failed -> $title: $msg');
-                                    TopNotification.show(
-                                      dialogContext,
-                                      title: title,
-                                      message: msg,
-                                      isError: true,
-                                    );
-                                  }
+                                onPressed: isCreatingRoom
+                                    ? null
+                                    : () async {
+                                        void showValidationToast(
+                                          String title,
+                                          String msg,
+                                        ) {
+                                          debugPrint(
+                                            'ChatList: Validation Failed -> $title: $msg',
+                                          );
+                                          TopNotification.show(
+                                            dialogContext,
+                                            title: title,
+                                            message: msg,
+                                            isError: true,
+                                          );
+                                        }
 
-                                  debugPrint('ChatList: CREATE CLICKED. Channel: $selectedChannel, Account: $selectedAccount, To: $selectedTo, Contact: $selectedContact');
-                                  // Validasi wajib isian sebelum proses pembuatan ruangan (New Conversation)
-                                  if (selectedChannel == null ||
-                                      selectedChannel!.trim().isEmpty) {
-                                    showValidationToast(
-                                      'Kolom Belum Lengkap!',
-                                      'Silakan pilih Channel komunikasi terlebih dahulu.',
-                                    );
-                                    return;
-                                  }
-                                  if (selectedAccount == null ||
-                                      selectedAccount!.trim().isEmpty) {
-                                    showValidationToast(
-                                      'Kolom Belum Lengkap!',
-                                      'Silakan pilih Akun (Account) pengirim terlebih dahulu.',
-                                    );
-                                    return;
-                                  }
-                                  if (selectedChat == 'Group') {
-                                    if (selectedTo == 'Group' &&
-                                        (selectedGroup == null ||
-                                            selectedGroup!.trim().isEmpty ||
-                                            selectedGroup!.contains('No Groups') ||
-                                            selectedGroup!.contains('Tidak ada grup'))) {
-                                      showValidationToast(
-                                        'Kolom Belum Lengkap!',
-                                        'Please select a Group from the available list.',
-                                      );
-                                      return;
-                                    } else if (selectedTo == 'Manual' &&
-                                        manualInput.trim().isEmpty) {
-                                      showValidationToast(
-                                        'Kolom Belum Lengkap!',
-                                        'Silakan masukkan nomor/ID grup tujuan secara manual.',
-                                      );
-                                      return;
-                                    } else if (selectedTo == 'Link' &&
-                                        manualInput.trim().isEmpty) {
-                                      showValidationToast(
-                                        'Kolom Belum Lengkap!',
-                                        'Silakan masukkan ID Tautan (Link) grup tujuan.',
-                                      );
-                                      return;
-                                    }
-                                  } else {
-                                    if (selectedTo == 'Contact' &&
-                                        (selectedContact == null ||
-                                            selectedContact!.trim().isEmpty ||
-                                            selectedContact!.contains(
-                                              'No Contacts',
-                                            ))) {
-                                      showValidationToast(
-                                        'Kolom Belum Lengkap!',
-                                        'Please select a Contact recipient from the available list.',
-                                      );
-                                      return;
-                                    } else if (selectedTo == 'Manual' &&
-                                        manualInput.trim().isEmpty) {
-                                      showValidationToast(
-                                        'Kolom Belum Lengkap!',
-                                        'Silakan masukkan nomor telepon tujuan secara manual.',
-                                      );
-                                      return;
-                                    } else if (selectedTo == 'Link' &&
-                                        manualInput.trim().isEmpty) {
-                                      showValidationToast(
-                                        'Kolom Belum Lengkap!',
-                                        'Silakan masukkan ID Tautan (Link) tujuan.',
-                                      );
-                                      return;
-                                    }
-                                  }
-
-                                  // Dapatkan Id akun yang dipilih dalam format integer
-                                  int accountIdInt = 0;
-                                  if (selectedAccount != null) {
-                                    final idx = accountNames.indexOf(
-                                      selectedAccount!,
-                                    );
-                                    if (idx >= 0 && idx < filteredAccounts.length) {
-                                      accountIdInt =
-                                          int.tryParse(
-                                            (filteredAccounts[idx]['Id'] ?? filteredAccounts[idx]['id'])?.toString() ??
-                                                '',
-                                          ) ??
-                                          0;
-                                    }
-                                  }
-
-                                  // Dapatkan Id channel yang dipilih dalam format integer
-                                  int channelIdInt = 1;
-                                  if (selectedChannel != null) {
-                                    final idx = channelNames.indexOf(
-                                      selectedChannel!,
-                                    );
-                                    if (idx >= 0 && idx < channels.length) {
-                                      channelIdInt =
-                                          int.tryParse(
-                                            (channels[idx]['Id'] ?? channels[idx]['id'])?.toString() ??
-                                                '',
-                                          ) ??
-                                          1;
-                                    }
-                                  }
-
-                                  // Temukan ID penerima berdasarkan opsi yang dipilih
-                                  String? receiver;
-                                  int? contactId;
-                                  int? linkId;
-                                  int? groupId;
-                                  String? groupName;
-                                  bool isGroup = selectedChat == 'Group';
-
-                                  if (isGroup) {
-                                    if (selectedTo == 'Group' && selectedGroup != null) {
-                                      final idx = groupNames.indexOf(selectedGroup!);
-                                      if (idx >= 0 && idx < filteredGroups.length) {
-                                        final grp = filteredGroups[idx];
-                                        debugPrint('ChatList: Selected Group RAW: $grp');
-                                        final rawGrpId = (grp['Id'] ?? grp['id'] ?? grp['GroupId'] ?? grp['GrpId'])?.toString();
-                                        groupId = int.tryParse(rawGrpId ?? '');
-                                        groupName = (grp['Name'] ?? grp['DisplayName'] ?? grp['Title'] ?? grp['Nm'])?.toString();
-                                        receiver = rawGrpId;
-                                        debugPrint('ChatList: Receiver (GroupId): $receiver, Parsed GrpId: $groupId, GroupName: $groupName');
-                                      }
-                                    } else if (selectedTo == 'Manual' || selectedTo == 'Link') {
-                                      receiver = manualInput;
-                                      groupId = int.tryParse(manualInput);
-                                      groupName = manualInput;
-                                      if (selectedTo == 'Link') {
-                                        linkId = int.tryParse(manualInput);
-                                      }
-                                    }
-                                  } else {
-                                    if (selectedTo == 'Contact' &&
-                                        selectedContact != null) {
-                                      final idx = contactNames.indexOf(
-                                        selectedContact!,
-                                      );
-                                      if (idx >= 0 && idx < filteredContacts.length) {
-                                        final contact = filteredContacts[idx];
-                                        debugPrint('ChatList: Selected Contact RAW: $contact');
-                                        receiver = (contact['Id'] ?? contact['id'])?.toString();
-                                        contactId = int.tryParse(receiver ?? '');
-                                        debugPrint('ChatList: Receiver (Id): $receiver, Parsed CtId: $contactId');
-
-                                        // CARI LeadLink yang 100% cocok dengan Channel (misal 2 = Telegram) & Akun
-                                        // agar obrolan yang dibuka memiliki riwayat pesan yang benar (tidak salah WA / tidak 0 pesan)!
-                                        final leadLinks = contact['LeadLinks'];
-                                        if (leadLinks is List &&
-                                            leadLinks.isNotEmpty) {
-                                          Map? targetLink;
-                                          for (final l in leadLinks) {
-                                            if (l is Map) {
-                                              final lChId =
-                                                  l['ChId']?.toString() ??
-                                                  l['Ch']?.toString() ??
-                                                  l['ChannelId']?.toString() ??
-                                                  l['chId']?.toString() ??
-                                                  '';
-                                              final lAccId =
-                                                  l['AccId']?.toString() ??
-                                                  l['AccountId']?.toString() ??
-                                                  l['IdAccount']?.toString() ??
-                                                  l['accId']?.toString() ??
-                                                  '';
-
-                                              if (lChId ==
-                                                  channelIdInt.toString()) {
-                                                if (accountIdInt > 0 &&
-                                                    lAccId ==
-                                                        accountIdInt.toString()) {
-                                                  targetLink = l;
-                                                  break;
-                                                } else if (targetLink == null) {
-                                                  targetLink = l;
-                                                }
-                                              }
-                                            }
-                                          }
-                                          if (targetLink != null) {
-                                            linkId = int.tryParse(
-                                              targetLink['Id']?.toString() ??
-                                                  targetLink['id']?.toString() ??
-                                                  '',
-                                            );
-                                          } else {
+                                        debugPrint(
+                                          'ChatList: CREATE CLICKED. Channel: $selectedChannel, Account: $selectedAccount, To: $selectedTo, Contact: $selectedContact',
+                                        );
+                                        // Validasi wajib isian sebelum proses pembuatan ruangan (New Conversation)
+                                        if (selectedChannel == null ||
+                                            selectedChannel!.trim().isEmpty) {
+                                          showValidationToast(
+                                            'Kolom Belum Lengkap!',
+                                            'Silakan pilih Channel komunikasi terlebih dahulu.',
+                                          );
+                                          return;
+                                        }
+                                        if (selectedAccount == null ||
+                                            selectedAccount!.trim().isEmpty) {
+                                          showValidationToast(
+                                            'Kolom Belum Lengkap!',
+                                            'Silakan pilih Akun (Account) pengirim terlebih dahulu.',
+                                          );
+                                          return;
+                                        }
+                                        if (selectedChat == 'Group') {
+                                          if (selectedTo == 'Group' &&
+                                              (selectedGroup == null ||
+                                                  selectedGroup!
+                                                      .trim()
+                                                      .isEmpty ||
+                                                  selectedGroup!.contains(
+                                                    'No Groups',
+                                                  ) ||
+                                                  selectedGroup!.contains(
+                                                    'Tidak ada grup',
+                                                  ))) {
                                             showValidationToast(
-                                              'Kontak Tidak Terdaftar',
-                                              'Kontak ini tidak terdaftar pada channel yang dipilih. Silakan pilih kontak lain atau gunakan opsi input Manual.',
+                                              'Kolom Belum Lengkap!',
+                                              'Please select a Group from the available list.',
+                                            );
+                                            return;
+                                          } else if (selectedTo == 'Manual' &&
+                                              manualInput.trim().isEmpty) {
+                                            showValidationToast(
+                                              'Kolom Belum Lengkap!',
+                                              'Silakan masukkan nomor/ID grup tujuan secara manual.',
+                                            );
+                                            return;
+                                          } else if (selectedTo == 'Link' &&
+                                              manualInput.trim().isEmpty) {
+                                            showValidationToast(
+                                              'Kolom Belum Lengkap!',
+                                              'Silakan masukkan ID Tautan (Link) grup tujuan.',
+                                            );
+                                            return;
+                                          }
+                                        } else {
+                                          if (selectedTo == 'Contact' &&
+                                              (selectedContact == null ||
+                                                  selectedContact!
+                                                      .trim()
+                                                      .isEmpty ||
+                                                  selectedContact!.contains(
+                                                    'No Contacts',
+                                                  ))) {
+                                            showValidationToast(
+                                              'Kolom Belum Lengkap!',
+                                              'Please select a Contact recipient from the available list.',
+                                            );
+                                            return;
+                                          } else if (selectedTo == 'Manual' &&
+                                              manualInput.trim().isEmpty) {
+                                            showValidationToast(
+                                              'Kolom Belum Lengkap!',
+                                              'Silakan masukkan nomor telepon tujuan secara manual.',
+                                            );
+                                            return;
+                                          } else if (selectedTo == 'Link' &&
+                                              manualInput.trim().isEmpty) {
+                                            showValidationToast(
+                                              'Kolom Belum Lengkap!',
+                                              'Silakan masukkan ID Tautan (Link) tujuan.',
                                             );
                                             return;
                                           }
                                         }
-                                      }
-                                    } else if (selectedTo == 'Manual' ||
-                                        selectedTo == 'Link') {
-                                      receiver = manualInput;
-                                      if (selectedTo == 'Link') {
-                                        linkId = int.tryParse(manualInput);
-                                      }
-                                    }
-                                  }
 
-                                  if (receiver == null || receiver.isEmpty) {
-                                    showValidationToast(
-                                      'Kolom Belum Lengkap!',
-                                      'Silakan periksa kembali data ${isGroup ? "grup" : "penerima"} yang dipilih.',
-                                    );
-                                    return;
-                                  }
+                                        // Dapatkan Id akun yang dipilih dalam format integer
+                                        int accountIdInt = 0;
+                                        if (selectedAccount != null) {
+                                          final idx = accountNames.indexOf(
+                                            selectedAccount!,
+                                          );
+                                          if (idx >= 0 &&
+                                              idx < filteredAccounts.length) {
+                                            accountIdInt =
+                                                int.tryParse(
+                                                  (filteredAccounts[idx]['Id'] ??
+                                                              filteredAccounts[idx]['id'])
+                                                          ?.toString() ??
+                                                      '',
+                                                ) ??
+                                                0;
+                                          }
+                                        }
 
-                                  setDialogState(() => isCreatingRoom = true);
+                                        // Dapatkan Id channel yang dipilih dalam format integer
+                                        int channelIdInt = 1;
+                                        if (selectedChannel != null) {
+                                          final idx = channelNames.indexOf(
+                                            selectedChannel!,
+                                          );
+                                          if (idx >= 0 &&
+                                              idx < channels.length) {
+                                            channelIdInt =
+                                                int.tryParse(
+                                                  (channels[idx]['Id'] ??
+                                                              channels[idx]['id'])
+                                                          ?.toString() ??
+                                                      '',
+                                                ) ??
+                                                1;
+                                          }
+                                        }
 
-                                  // Buat ruang obrolan (room) melalui API baru alih-alih sekadar mengirim pesan
-                                  final result = await chatService
-                                      .createNewRoom(
-                                        accountId: accountIdInt,
-                                        channelId: channelIdInt,
-                                        contactId: isGroup ? null : contactId,
-                                        linkId: linkId,
-                                        groupId: groupId,
-                                        manualNumber: selectedTo == 'Manual'
-                                            ? manualInput
-                                            : null,
-                                        isGroup: isGroup,
-                                      );
+                                        // Temukan ID penerima berdasarkan opsi yang dipilih
+                                        String? receiver;
+                                        int? contactId;
+                                        int? linkId;
+                                        int? groupId;
+                                        String? groupName;
+                                        bool isGroup = selectedChat == 'Group';
 
-                                  if (!mounted) return;
-                                  setDialogState(() => isCreatingRoom = false);
+                                        if (isGroup) {
+                                          if (selectedTo == 'Group' &&
+                                              selectedGroup != null) {
+                                            final idx = groupNames.indexOf(
+                                              selectedGroup!,
+                                            );
+                                            if (idx >= 0 &&
+                                                idx < filteredGroups.length) {
+                                              final grp = filteredGroups[idx];
+                                              debugPrint(
+                                                'ChatList: Selected Group RAW: $grp',
+                                              );
+                                              final rawGrpId =
+                                                  (grp['Id'] ??
+                                                          grp['id'] ??
+                                                          grp['GroupId'] ??
+                                                          grp['GrpId'])
+                                                      ?.toString();
+                                              groupId = int.tryParse(
+                                                rawGrpId ?? '',
+                                              );
+                                              groupName =
+                                                  (grp['Name'] ??
+                                                          grp['DisplayName'] ??
+                                                          grp['Title'] ??
+                                                          grp['Nm'])
+                                                      ?.toString();
+                                              receiver = rawGrpId;
+                                              debugPrint(
+                                                'ChatList: Receiver (GroupId): $receiver, Parsed GrpId: $groupId, GroupName: $groupName',
+                                              );
+                                            }
+                                          } else if (selectedTo == 'Manual' ||
+                                              selectedTo == 'Link') {
+                                            receiver = manualInput;
+                                            groupId = int.tryParse(manualInput);
+                                            groupName = manualInput;
+                                            if (selectedTo == 'Link') {
+                                              linkId = int.tryParse(
+                                                manualInput,
+                                              );
+                                            }
+                                          }
+                                        } else {
+                                          if (selectedTo == 'Contact' &&
+                                              selectedContact != null) {
+                                            final idx = contactNames.indexOf(
+                                              selectedContact!,
+                                            );
+                                            if (idx >= 0 &&
+                                                idx < filteredContacts.length) {
+                                              final contact =
+                                                  filteredContacts[idx];
+                                              debugPrint(
+                                                'ChatList: Selected Contact RAW: $contact',
+                                              );
+                                              receiver =
+                                                  (contact['Id'] ??
+                                                          contact['id'])
+                                                      ?.toString();
+                                              contactId = int.tryParse(
+                                                receiver ?? '',
+                                              );
+                                              debugPrint(
+                                                'ChatList: Receiver (Id): $receiver, Parsed CtId: $contactId',
+                                              );
 
-                                  if (result['success'] == true) {
-                                    Navigator.pop(dialogContext);
+                                              // CARI LeadLink yang cocok dengan Channel (database/platfom) & Akun
+                                              // agar obrolan yang dibuka memiliki riwayat pesan yang benar.
+                                              final leadLinks =
+                                                  contact['LeadLinks'];
+                                              if (leadLinks is List &&
+                                                  leadLinks.isNotEmpty) {
+                                                Map? targetLink;
+                                                for (final l in leadLinks) {
+                                                  if (l is Map) {
+                                                    final lChId =
+                                                        l['ChId']?.toString() ??
+                                                        l['Ch']?.toString() ??
+                                                        l['ChannelId']
+                                                            ?.toString() ??
+                                                        l['chId']?.toString() ??
+                                                        '';
+                                                    final lAccId =
+                                                        l['AccId']
+                                                            ?.toString() ??
+                                                        l['AccountId']
+                                                            ?.toString() ??
+                                                        l['IdAccount']
+                                                            ?.toString() ??
+                                                        l['accId']
+                                                            ?.toString() ??
+                                                        '';
 
-                                    // Muat ulang daftar chat dan navigasikan layar ke ruang chat yang baru dibuat
-                                    if (mounted) {
-                                      // Tanpa jeda & tanpa fetch ulang: bangun ChatModel optimistik
-                                      // dari data form + roomId, sisipkan ke daftar lokal, lalu
-                                      // langsung navigasi (target <500ms). Sinkronisasi dilakukan
-                                      // di latar belakang tanpa menghambat navigasi.
-                                      final String newRoomIdStr =
-                                          result['roomId']?.toString() ?? '';
+                                                    final isWaLink =
+                                                        lChId == '1' ||
+                                                        lChId == '1557' ||
+                                                        lChId == '1561';
+                                                    final isTgLink =
+                                                        lChId == '2';
+                                                    final isChannelMatch =
+                                                        lChId ==
+                                                            channelIdInt
+                                                                .toString() ||
+                                                        (isSelectedChannelWhatsApp &&
+                                                            isWaLink) ||
+                                                        (isSelectedChannelTelegram &&
+                                                            isTgLink);
 
-                                      final resolvedCtId =
-                                          result['contactId']?.toString() ??
-                                          (contactId?.toString() ?? '');
-                                      final resolvedLinkId =
-                                          result['linkId']?.toString() ??
-                                          (linkId?.toString() ?? '');
-                                      final resolvedAccId =
-                                          result['accountId']?.toString() ??
-                                          accountIdInt.toString();
-                                      final resolvedCtRealId =
-                                          result['ctRealId']?.toString() ??
-                                          receiver;
+                                                    if (isChannelMatch) {
+                                                      if (accountIdInt > 0 &&
+                                                          lAccId ==
+                                                              accountIdInt
+                                                                  .toString()) {
+                                                        targetLink = l;
+                                                        break;
+                                                      } else if (targetLink ==
+                                                          null) {
+                                                        targetLink = l;
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                                if (targetLink != null) {
+                                                  linkId = int.tryParse(
+                                                    targetLink['Id']
+                                                            ?.toString() ??
+                                                        targetLink['id']
+                                                            ?.toString() ??
+                                                        '',
+                                                  );
+                                                }
+                                                // Jika targetLink == null tetapi kontak valid (memiliki contactId),
+                                                // biarkan linkId = null; API createNewRoom akan menetapkan
+                                                // To: 1 dengan CtId: contactId secara otomatis.
+                                              }
+                                            }
+                                          } else if (selectedTo == 'Manual' ||
+                                              selectedTo == 'Link') {
+                                            receiver = manualInput;
+                                            if (selectedTo == 'Link') {
+                                              linkId = int.tryParse(
+                                                manualInput,
+                                              );
+                                            }
+                                          }
+                                        }
 
-                                      final String resolvedSender = isGroup
-                                          ? (groupName?.isNotEmpty == true
-                                              ? groupName!
-                                              : (selectedGroup?.isNotEmpty == true
-                                                  ? selectedGroup!
-                                                  : (manualInput.isNotEmpty
-                                                      ? manualInput
-                                                      : 'Group')))
-                                          : (selectedContact?.isNotEmpty == true
-                                              ? selectedContact!
-                                              : (manualInput.isNotEmpty
+                                        if (receiver == null ||
+                                            receiver.isEmpty) {
+                                          showValidationToast(
+                                            'Kolom Belum Lengkap!',
+                                            'Silakan periksa kembali data ${isGroup ? "grup" : "penerima"} yang dipilih.',
+                                          );
+                                          return;
+                                        }
+
+                                        setDialogState(
+                                          () => isCreatingRoom = true,
+                                        );
+
+                                        // Buat ruang obrolan (room) melalui API baru alih-alih sekadar mengirim pesan
+                                        final result = await chatService
+                                            .createNewRoom(
+                                              accountId: accountIdInt,
+                                              channelId: channelIdInt,
+                                              contactId: isGroup
+                                                  ? null
+                                                  : contactId,
+                                              linkId: linkId,
+                                              groupId: groupId,
+                                              manualNumber:
+                                                  selectedTo == 'Manual'
                                                   ? manualInput
-                                                  : 'New Chat'));
+                                                  : null,
+                                              isGroup: isGroup,
+                                            );
 
-                                      final newChat = ChatModel(
-                                        id: newRoomIdStr,
-                                        contactId: isGroup
-                                            ? ''
-                                            : (resolvedCtId.isNotEmpty
-                                                ? resolvedCtId
-                                                : receiver),
-                                        sender: resolvedSender,
-                                        lastMessage: '',
-                                        time: DateTime.now().toIso8601String(),
-                                        unreadCount: 0,
-                                        status: 'Unassigned',
-                                        agentName: '',
-                                        tags: [],
-                                        avatarUrl: null,
-                                        lastMessageType: null,
-                                        channelName:
-                                            selectedAccount?.isNotEmpty == true
-                                                ? selectedAccount!
-                                                : (selectedChannel ?? ''),
-                                        channelType: selectedChannel ?? '',
-                                        isPinned: false,
-                                        isArchived: false,
-                                        chId: channelIdInt.toString(),
-                                        funnel: '',
-                                        isGroup: isGroup,
-                                        isBlocked: false,
-                                        isLastMessageFromMe: true,
-                                        needReply: false,
-                                        accountId: resolvedAccId,
-                                        ctRealId: resolvedCtRealId,
-                                        link: resolvedLinkId,
-                                        campaign: '',
-                                        deal: '',
-                                        groupName: isGroup
-                                            ? (groupName?.isNotEmpty == true
-                                                ? groupName!
-                                                : (selectedGroup?.isNotEmpty == true
-                                                    ? selectedGroup!
-                                                    : (manualInput.isNotEmpty
-                                                        ? manualInput
-                                                        : 'Group')))
-                                            : '',
-                                        groupId: isGroup
-                                            ? (groupId?.toString() ?? receiver)
-                                            : '',
-                                      );
-
-                                      context
-                                          .read<ChatProvider>()
-                                          .insertLocalChat(newChat);
-
-                                      // Scroll ke atas agar chat baru tampak di posisi teratas.
-                                      if (_scrollController.hasClients) {
-                                        _scrollController.animateTo(
-                                          0,
-                                          duration: const Duration(
-                                            milliseconds: 300,
-                                          ),
-                                          curve: Curves.easeOut,
+                                        if (!mounted) return;
+                                        setDialogState(
+                                          () => isCreatingRoom = false,
                                         );
-                                      }
 
-                                      if (widget.onChatSelected != null) {
-                                        widget.onChatSelected!(newChat);
-                                      } else {
-                                        await Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                                ChatDetailPage(chat: newChat),
-                                          ),
-                                        );
-                                      }
+                                        if (result['success'] == true) {
+                                          Navigator.pop(dialogContext);
 
-                                      // Sinkronisasi latar belakang (tanpa await) agar data
-                                      // list ter-update setelah navigasi.
-                                      unawaited(context
-                                          .read<ChatProvider>()
-                                          .refreshFirstPage());
-                                    }
-                                  } else {
-                                    showDialog(
-                                      context: dialogContext,
-                                      builder: (ctx) => AlertDialog(
-                                        title: const Text('Failed to Create Conversation'),
-                                        content: Text('Terjadi kesalahan:\n\n${result['error']}\n\nPastikan konfigurasi channel di server sudah benar dan sedang online.'),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () => Navigator.pop(ctx),
-                                            child: const Text('Tutup'),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  }
-                                },
+                                          // Muat ulang daftar chat dan navigasikan layar ke ruang chat yang baru dibuat
+                                          if (mounted) {
+                                            // Tanpa jeda & tanpa fetch ulang: bangun ChatModel optimistik
+                                            // dari data form + roomId, sisipkan ke daftar lokal, lalu
+                                            // langsung navigasi (target <500ms). Sinkronisasi dilakukan
+                                            // di latar belakang tanpa menghambat navigasi.
+                                            final String newRoomIdStr =
+                                                result['roomId']?.toString() ??
+                                                '';
+
+                                            final resolvedCtId =
+                                                result['contactId']
+                                                    ?.toString() ??
+                                                (contactId?.toString() ?? '');
+                                            final resolvedLinkId =
+                                                result['linkId']?.toString() ??
+                                                (linkId?.toString() ?? '');
+                                            final resolvedAccId =
+                                                result['accountId']
+                                                    ?.toString() ??
+                                                accountIdInt.toString();
+                                            final resolvedCtRealId =
+                                                result['ctRealId']
+                                                    ?.toString() ??
+                                                receiver;
+
+                                            final String resolvedSender =
+                                                isGroup
+                                                ? (groupName?.isNotEmpty == true
+                                                      ? groupName!
+                                                      : (selectedGroup
+                                                                    ?.isNotEmpty ==
+                                                                true
+                                                            ? selectedGroup!
+                                                            : (manualInput
+                                                                      .isNotEmpty
+                                                                  ? manualInput
+                                                                  : 'Group')))
+                                                : (selectedContact
+                                                              ?.isNotEmpty ==
+                                                          true
+                                                      ? selectedContact!
+                                                      : (manualInput.isNotEmpty
+                                                            ? manualInput
+                                                            : 'New Chat'));
+
+                                            final newChat = ChatModel(
+                                              id: newRoomIdStr,
+                                              contactId: isGroup
+                                                  ? ''
+                                                  : (resolvedCtId.isNotEmpty
+                                                        ? resolvedCtId
+                                                        : receiver),
+                                              sender: resolvedSender,
+                                              lastMessage: '',
+                                              time: DateTime.now()
+                                                  .toIso8601String(),
+                                              unreadCount: 0,
+                                              status: 'Unassigned',
+                                              agentName: '',
+                                              tags: [],
+                                              avatarUrl: null,
+                                              lastMessageType: null,
+                                              channelName:
+                                                  selectedAccount?.isNotEmpty ==
+                                                      true
+                                                  ? selectedAccount!
+                                                  : (selectedChannel ?? ''),
+                                              channelType:
+                                                  selectedChannel ?? '',
+                                              isPinned: false,
+                                              isArchived: false,
+                                              chId: channelIdInt.toString(),
+                                              funnel: '',
+                                              isGroup: isGroup,
+                                              isBlocked: false,
+                                              isLastMessageFromMe: true,
+                                              needReply: false,
+                                              accountId: resolvedAccId,
+                                              ctRealId: resolvedCtRealId,
+                                              link: resolvedLinkId,
+                                              campaign: '',
+                                              deal: '',
+                                              groupName: isGroup
+                                                  ? (groupName?.isNotEmpty ==
+                                                            true
+                                                        ? groupName!
+                                                        : (selectedGroup
+                                                                      ?.isNotEmpty ==
+                                                                  true
+                                                              ? selectedGroup!
+                                                              : (manualInput
+                                                                        .isNotEmpty
+                                                                    ? manualInput
+                                                                    : 'Group')))
+                                                  : '',
+                                              groupId: isGroup
+                                                  ? (groupId?.toString() ??
+                                                        receiver)
+                                                  : '',
+                                            );
+
+                                            context
+                                                .read<ChatProvider>()
+                                                .insertLocalChat(newChat);
+
+                                            // Scroll ke atas agar chat baru tampak di posisi teratas.
+                                            if (_scrollController.hasClients) {
+                                              _scrollController.animateTo(
+                                                0,
+                                                duration: const Duration(
+                                                  milliseconds: 300,
+                                                ),
+                                                curve: Curves.easeOut,
+                                              );
+                                            }
+
+                                            if (widget.onChatSelected != null) {
+                                              widget.onChatSelected!(newChat);
+                                            } else {
+                                              await Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      ChatDetailPage(
+                                                        chat: newChat,
+                                                      ),
+                                                ),
+                                              );
+                                            }
+
+                                            // Sinkronisasi latar belakang (tanpa await) agar data
+                                            // list ter-update setelah navigasi.
+                                            unawaited(
+                                              context
+                                                  .read<ChatProvider>()
+                                                  .refreshFirstPage(),
+                                            );
+                                          }
+                                        } else {
+                                          showDialog(
+                                            context: dialogContext,
+                                            builder: (ctx) => AlertDialog(
+                                              title: const Text(
+                                                'Failed to Create Conversation',
+                                              ),
+                                              content: Text(
+                                                'Terjadi kesalahan:\n\n${result['error']}\n\nPastikan konfigurasi channel di server sudah benar dan sedang online.',
+                                              ),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(ctx),
+                                                  child: const Text('Tutup'),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }
+                                      },
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.blue,
                                   foregroundColor: Colors.white,
@@ -2450,9 +2677,7 @@ class _ChatListPageState extends State<ChatListPage>
             ? Colors.blue.shade900.withOpacity(0.3)
             : Colors.blue.shade50;
       } else if (isActiveMaster) {
-        return isDark
-            ? Colors.white.withOpacity(0.08)
-            : Colors.grey.shade200;
+        return isDark ? Colors.white.withOpacity(0.08) : Colors.grey.shade200;
       }
       return isDark ? const Color(0xFF1F2C34) : Colors.white;
     }
@@ -2490,7 +2715,9 @@ class _ChatListPageState extends State<ChatListPage>
                 } else {
                   await Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => ChatDetailPage(chat: chat)),
+                    MaterialPageRoute(
+                      builder: (_) => ChatDetailPage(chat: chat),
+                    ),
                   );
                 }
 
@@ -2560,7 +2787,9 @@ class _ChatListPageState extends State<ChatListPage>
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 15,
-                                      color: isDark ? Colors.white : Colors.black,
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black,
                                     ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -2576,7 +2805,11 @@ class _ChatListPageState extends State<ChatListPage>
                             Builder(
                               builder: (context) {
                                 final validTags = chat.tags
-                                    .map((t) => StringHelper.cleanApostrophe(t.trim()))
+                                    .map(
+                                      (t) => StringHelper.cleanApostrophe(
+                                        t.trim(),
+                                      ),
+                                    )
                                     .where((t) => t.isNotEmpty)
                                     .toList();
                                 final hasFunnel = chat.funnel.trim().isNotEmpty;
@@ -2602,7 +2835,9 @@ class _ChatListPageState extends State<ChatListPage>
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
                                               fontSize: 12,
-                                              color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                              color: isDark
+                                                  ? Colors.grey.shade400
+                                                  : Colors.grey.shade600,
                                             ),
                                           ),
                                         ),
@@ -2782,9 +3017,13 @@ class _ChatListPageState extends State<ChatListPage>
     // Aturan Resmi Backend NoBox:
     // 1. Teks pesan terakhir MERAH: SdrMsg == "you" dan IsNeedReply == 1 (atau unreadCount > 0)
     // 2. Balasan dari Agen (termasuk Telegram/Web/App): SdrMsg == "me" -> Teks normal (bukan merah)
-    final bool isFromAgent = chat.sdrMsg.toLowerCase() == 'me' || chat.isLastMessageFromMe;
-    final bool isCustomer = chat.sdrMsg.toLowerCase() == 'you' || (!isFromAgent && chat.sdrMsg.isEmpty);
-    final bool isRedText = !isFromAgent && isCustomer && (chat.needReply || hasUnread);
+    final bool isFromAgent =
+        chat.sdrMsg.toLowerCase() == 'me' || chat.isLastMessageFromMe;
+    final bool isCustomer =
+        chat.sdrMsg.toLowerCase() == 'you' ||
+        (!isFromAgent && chat.sdrMsg.isEmpty);
+    final bool isRedText =
+        !isFromAgent && isCustomer && (chat.needReply || hasUnread);
 
     final Color messageColor = isRedText
         ? Colors.red
@@ -2862,23 +3101,32 @@ class _ChatListPageState extends State<ChatListPage>
           .replaceAll('🖼️', '')
           .replaceAll('🖼', '')
           .trim();
-      final match = RegExp(r'^(Photo|Foto)\s*(.*)$', caseSensitive: false).firstMatch(t);
+      final match = RegExp(
+        r'^(Photo|Foto)\s*(.*)$',
+        caseSensitive: false,
+      ).firstMatch(t);
       if (match != null) {
         final desc = match.group(2)?.trim() ?? '';
         return desc.isNotEmpty ? '📷 $desc' : '📷 Photo';
       }
-      if (t.isNotEmpty && t.toLowerCase() != 'photo' && t.toLowerCase() != 'foto') {
+      if (t.isNotEmpty &&
+          t.toLowerCase() != 'photo' &&
+          t.toLowerCase() != 'foto') {
         return '📷 $t';
       }
       return '📷 Photo';
     }
 
-    final isRawPhotoString = RegExp(r'^(📷|🖼️|🖼)\s*(Photo|Foto)', caseSensitive: false).hasMatch(trimmedMsg);
+    final isRawPhotoString = RegExp(
+      r'^(📷|🖼️|🖼)\s*(Photo|Foto)',
+      caseSensitive: false,
+    ).hasMatch(trimmedMsg);
     final exactPhotoLabels = ['📷 photo', '📷 foto', '🖼 photo', '🖼 foto'];
     final exactVideoLabels = ['🎥 video', '🎬 video'];
     final exactStickerLabels = ['🌟 sticker', '🎬 sticker'];
 
-    final isVoiceNote = chat.lastMessageType == '2' ||
+    final isVoiceNote =
+        chat.lastMessageType == '2' ||
         chat.lastMessageType?.toLowerCase() == 'voice note' ||
         chat.lastMessageType?.toLowerCase() == 'audio' ||
         isAudioMessage(trimmedMsg);
@@ -2886,7 +3134,9 @@ class _ChatListPageState extends State<ChatListPage>
     if (isVoiceNote) {
       displayMessage = '🎤 Voice Message';
       parsedAsMedia = true;
-    } else if (exactStickerLabels.contains(lowerTrimmed) || chat.lastMessageType == '16' || chat.lastMessageType == '17') {
+    } else if (exactStickerLabels.contains(lowerTrimmed) ||
+        chat.lastMessageType == '16' ||
+        chat.lastMessageType == '17') {
       displayMessage = '🌟 Sticker';
       parsedAsMedia = true;
     } else if (isRawPhotoString ||
@@ -2896,7 +3146,8 @@ class _ChatListPageState extends State<ChatListPage>
         chat.lastMessageType?.toLowerCase() == 'image') {
       displayMessage = formatPhotoPreview(trimmedMsg);
       parsedAsMedia = true;
-    } else if (exactVideoLabels.contains(lowerTrimmed) || chat.lastMessageType == '4') {
+    } else if (exactVideoLabels.contains(lowerTrimmed) ||
+        chat.lastMessageType == '4') {
       displayMessage = '🎬 Video';
       parsedAsMedia = true;
     }
@@ -3037,8 +3288,7 @@ class _ChatListPageState extends State<ChatListPage>
                     '.amr',
                   ].any(
                     (ext) =>
-                        filename.contains(ext) ||
-                        originalName.contains(ext),
+                        filename.contains(ext) || originalName.contains(ext),
                   ) ||
                   originalName.contains('voice note') ||
                   originalName.contains('pesan suara') ||
@@ -3050,12 +3300,7 @@ class _ChatListPageState extends State<ChatListPage>
           final isSticker =
               typeVal == '16' ||
               typeVal == '17' ||
-              [
-                '.webm',
-                '.tgs',
-                '.webp',
-                '.ezgif',
-              ].any(
+              ['.webm', '.tgs', '.webp', '.ezgif'].any(
                 (s) =>
                     filename.contains(s) ||
                     originalName.contains(s) ||
@@ -3092,16 +3337,20 @@ class _ChatListPageState extends State<ChatListPage>
 
           if (isSticker) {
             if (typeVal == '17' ||
-                ['.webm', '.tgs', '.mp4'].any((ext) =>
-                    filename.contains(ext) ||
-                    originalName.contains(ext) ||
-                    trimmedMsg.toLowerCase().contains(ext)) ||
+                ['.webm', '.tgs', '.mp4'].any(
+                  (ext) =>
+                      filename.contains(ext) ||
+                      originalName.contains(ext) ||
+                      trimmedMsg.toLowerCase().contains(ext),
+                ) ||
                 displayMessage.contains('🎬')) {
               displayMessage = '🎬 Sticker';
             } else {
               displayMessage = '🌟 Sticker';
             }
-            debugPrint('DEBUG STICKER JSON: isSticker=$isSticker, typeVal=$typeVal, filename=$filename, originalName=$originalName, msg=$trimmedMsg => result=$displayMessage');
+            debugPrint(
+              'DEBUG STICKER JSON: isSticker=$isSticker, typeVal=$typeVal, filename=$filename, originalName=$originalName, msg=$trimmedMsg => result=$displayMessage',
+            );
             parsedAsMedia = true;
           } else if (isAudio) {
             displayMessage = '🎤 Voice Message';
@@ -3214,7 +3463,8 @@ class _ChatListPageState extends State<ChatListPage>
             // Cek jika dibungkus dalam objek nested "message"
             if (rawText.isEmpty && targetMap['message'] is Map) {
               final nested = targetMap['message'] as Map;
-              rawText = nested['text']?.toString() ??
+              rawText =
+                  nested['text']?.toString() ??
                   nested['caption']?.toString() ??
                   nested['Msg']?.toString() ??
                   '';
@@ -3224,7 +3474,8 @@ class _ChatListPageState extends State<ChatListPage>
                 !rawText.startsWith('{') &&
                 !rawText.startsWith('[')) {
               displayMessage = rawText;
-              parsedAsMedia = false; // Ini adalah teks biasa dari bot/user, bukan media!
+              parsedAsMedia =
+                  false; // Ini adalah teks biasa dari bot/user, bukan media!
             }
           }
         }
@@ -3273,7 +3524,9 @@ class _ChatListPageState extends State<ChatListPage>
             displayMessage = '🎬 Video${cleaned.isNotEmpty ? ' $cleaned' : ''}';
           }
         }
-      } else if (overrideType == '16' || overrideType == '17' || overrideType.contains('sticker')) {
+      } else if (overrideType == '16' ||
+          overrideType == '17' ||
+          overrideType.contains('sticker')) {
         if (overrideType == '17' ||
             displayMessage.toLowerCase().contains('.webm') ||
             displayMessage.toLowerCase().contains('.tgs') ||
@@ -3282,7 +3535,9 @@ class _ChatListPageState extends State<ChatListPage>
         } else {
           displayMessage = '🌟 Sticker';
         }
-        debugPrint('DEBUG STICKER OVERRIDE: overrideType=$overrideType, displayMessage (original)=${chat.lastMessage} => result=$displayMessage');
+        debugPrint(
+          'DEBUG STICKER OVERRIDE: overrideType=$overrideType, displayMessage (original)=${chat.lastMessage} => result=$displayMessage',
+        );
       } else if (overrideType.contains('document') ||
           overrideType.contains('file') ||
           overrideType == '5') {
@@ -3339,7 +3594,8 @@ class _ChatListPageState extends State<ChatListPage>
     // FIX: Cek apakah lastMessage asli mengandung teks readable (pesan edit/ditetik)
     // sebelum fallback ke "Lampiran"
     final originalLastMsg = chat.lastMessage.trim();
-    final hasReadableOriginalText = originalLastMsg.isNotEmpty &&
+    final hasReadableOriginalText =
+        originalLastMsg.isNotEmpty &&
         !originalLastMsg.startsWith('{') &&
         !originalLastMsg.startsWith('[') &&
         !originalLastMsg.toLowerCase().contains('site.inbox.deletedmessage') &&
@@ -3489,7 +3745,10 @@ class _ChatListPageState extends State<ChatListPage>
       }
     }
 
-    if (RegExp(r'^(📷|🖼️|🖼)\s*(Photo|Foto)', caseSensitive: false).hasMatch(displayMessage)) {
+    if (RegExp(
+      r'^(📷|🖼️|🖼)\s*(Photo|Foto)',
+      caseSensitive: false,
+    ).hasMatch(displayMessage)) {
       displayMessage = formatPhotoPreview(displayMessage);
     }
 
@@ -4294,9 +4553,7 @@ class _ChatListPageState extends State<ChatListPage>
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
-                    isPinned
-                        ? 'Pin $sender dilepas'
-                        : '$sender pinned to top',
+                    isPinned ? 'Pin $sender dilepas' : '$sender pinned to top',
                   ),
                   duration: const Duration(seconds: 1),
                 ),

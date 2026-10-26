@@ -224,34 +224,17 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
   Set<String> _getPersistenceKeys() {
     final keys = <String>{};
-    // Prioritas UTAMA: Jika chat.id valid, persistence key HANYA boleh chat.id!
-    // JANGAN PERNAH menambahkan contactId, ctRealId, sender, atau nomor telepon
-    // jika chat.id valid, karena satu kontak bisa memiliki banyak percakapan
-    // (misal: percakapan lama yang diarsipkan dan percakapan baru yang aktif).
-    // Memasukkan contactId/nomor telepon akan menyebabkan pesan percakapan lama bocor ke percakapan baru!
+    // ANTI-BLEED: Persistence HANYA boleh di-scope ke chat.id aktif.
+    // JANGAN PERNAH fallback ke contactId/ctRealId/link/sender/nomor telepon,
+    // karena satu kontak bisa memiliki banyak percakapan (misal percakapan lama
+    // yang diarsipkan dan percakapan baru yang aktif). Fallback ke contactId akan
+    // membocorkan cache pesan percakapan lama ke room baru.
     if (chat.id.isNotEmpty && chat.id != 'null' && chat.id != '0') {
       keys.add(chat.id);
       return keys;
     }
-    if (chat.contactId.isNotEmpty &&
-        chat.contactId != '0' &&
-        chat.contactId != 'null') {
-      keys.add(chat.contactId);
-    }
-    if (chat.ctRealId.isNotEmpty &&
-        chat.ctRealId != '0' &&
-        chat.ctRealId != 'null') {
-      keys.add(chat.ctRealId);
-    }
-    if (chat.link.isNotEmpty && chat.link != '0' && chat.link != 'null') {
-      keys.add(chat.link);
-    }
-    if (chat.sender.isNotEmpty && chat.sender != 'null') {
-      keys.add(chat.sender.trim().toLowerCase());
-    }
-    final phoneOnly = chat.sender.replaceAll(RegExp(r'[^0-9]'), '');
-    if (phoneOnly.isNotEmpty && phoneOnly.length >= 8) keys.add(phoneOnly);
-    if (keys.isEmpty) keys.add('default_chat_${chat.hashCode}');
+    // Room baru yang belum memiliki id valid: JANGAN restore/simpan cache lama.
+    // Biarkan list pesan tetap kosong hingga id room terbentuk.
     return keys;
   }
 
@@ -262,12 +245,12 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     _savePersistentDebounce = Timer(const Duration(milliseconds: 600), () async {
       try {
         final prefs = await SharedPreferences.getInstance();
-        
+
         // FIX: Batasi pesan yang disimpan secara lokal maksimal 50 pesan terakhir
         // Menggunakan debounce agar tidak membekukan UI thread saat pesan masuk secara cepat
         final int maxPersistent = 50;
-        final List<Message> messagesToSave = _messages.length > maxPersistent 
-            ? _messages.sublist(_messages.length - maxPersistent) 
+        final List<Message> messagesToSave = _messages.length > maxPersistent
+            ? _messages.sublist(_messages.length - maxPersistent)
             : _messages;
 
         final List<Map<String, dynamic>> mapList = messagesToSave
@@ -341,7 +324,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       _messages.add(newMessage);
     } else {
       // Jika waktu pesan lebih lampau (out of order), sisipkan di indeks yang tepat
-      int insertIdx = _messages.indexWhere((m) => _parseMessageTimestamp(m) > newTime);
+      int insertIdx = _messages.indexWhere(
+        (m) => _parseMessageTimestamp(m) > newTime,
+      );
       if (insertIdx != -1) {
         _messages.insert(insertIdx, newMessage);
       } else {
@@ -371,9 +356,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 if (m.id.isNotEmpty && _deletedMessageIds.contains(m.id)) {
                   return false;
                 }
-                // Guard: Jangan restore pesan yang memiliki roomId berbeda dari room saat ini
-                if (chat.id.isNotEmpty && chat.id != 'null' && chat.id != '0') {
-                  if (m.roomId.isNotEmpty && m.roomId != '0' && m.roomId != chat.id) {
+                // Guard: Jika pesan memiliki roomId yang berbeda dari chat.id saat ini, lewati
+                if (chat.id.isNotEmpty && chat.id != '0' && chat.id != 'null') {
+                  if (m.roomId.isNotEmpty && m.roomId != chat.id) {
                     return false;
                   }
                 }
@@ -467,7 +452,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     }
     int loadedCount = 0;
     if (_firstUnreadMessageId != null && _firstUnreadMessageId!.isNotEmpty) {
-      final displayMessages = _messages.where((m) => !m.isSystemMessage).toList();
+      final displayMessages = _messages
+          .where((m) => !m.isSystemMessage)
+          .toList();
       final firstIdx = displayMessages.indexWhere(
         (m) =>
             m.id == _firstUnreadMessageId ||
@@ -480,10 +467,16 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       }
     }
     if (loadedCount == 0 && _firstUnreadDisplayIndex != null) {
-      final displayMessages = _messages.where((m) => !m.isSystemMessage).toList();
+      final displayMessages = _messages
+          .where((m) => !m.isSystemMessage)
+          .toList();
       if (_firstUnreadDisplayIndex! >= 0 &&
           _firstUnreadDisplayIndex! < displayMessages.length) {
-        for (int i = _firstUnreadDisplayIndex!; i < displayMessages.length; i++) {
+        for (
+          int i = _firstUnreadDisplayIndex!;
+          i < displayMessages.length;
+          i++
+        ) {
           if (!displayMessages[i].isMe) loadedCount++;
         }
       }
@@ -523,7 +516,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   final Set<String> _deletedMessageIds = {};
 
   String _getMessageKey(Message m) {
-    if (m.messageType == MessageType.voice && m.audioPath != null && m.audioPath!.isNotEmpty) {
+    if (m.messageType == MessageType.voice &&
+        m.audioPath != null &&
+        m.audioPath!.isNotEmpty) {
       final cleanAudio = m.audioPath!.split('?').first.split('/').last;
       return 'voice_$cleanAudio';
     }
@@ -675,7 +670,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
         final pixels = _scrollController.position.pixels;
         final isAtBottom = pixels <= 30.0;
-        final hasUnreadState = _firstUnreadMessageId != null || _unreadIncomingCountWhileScrolled > 0;
+        final hasUnreadState =
+            _firstUnreadMessageId != null ||
+            _unreadIncomingCountWhileScrolled > 0;
 
         if (isAtBottom) {
           _allInitialUnreadSeen = true;
@@ -694,10 +691,11 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             _showScrollToBottomButton = false;
           });
         } else {
-          final shouldShow = !isAtBottom && (
-            (hasUnreadState && (_remainingUnreadBadgeCount > 0 || pixels > 80.0)) ||
-            (!hasUnreadState && pixels > 150.0)
-          );
+          final shouldShow =
+              !isAtBottom &&
+              ((hasUnreadState &&
+                      (_remainingUnreadBadgeCount > 0 || pixels > 80.0)) ||
+                  (!hasUnreadState && pixels > 150.0));
 
           if (shouldShow != _showScrollToBottomButton) {
             setState(() {
@@ -955,7 +953,14 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     if (!mounted) return;
     final currentUserEmail = _currentUserEmail.isNotEmpty
         ? _currentUserEmail
-        : (_authProvider?.currentUser ?? (mounted ? Provider.of<AuthProvider>(context, listen: false).currentUser : '') ?? '');
+        : (_authProvider?.currentUser ??
+              (mounted
+                  ? Provider.of<AuthProvider>(
+                      context,
+                      listen: false,
+                    ).currentUser
+                  : '') ??
+              '');
 
     setState(() {
       _isLoadingMessages = true;
@@ -1184,7 +1189,10 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     if ((chat.id.isEmpty ||
                             chat.id == 'null' ||
                             chat.id == '0') &&
-                        first.roomId.isNotEmpty) {
+                        first.roomId.isNotEmpty &&
+                        !context.read<ChatProvider>().isRoomArchived(
+                          first.roomId,
+                        )) {
                       chat = chat.copyWith(id: first.roomId);
                       context.read<ChatProvider>().updateLocalChat(chat);
                       debugPrint(
@@ -1197,22 +1205,41 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 // Lakukan sorting lokal untuk memastikan urutan sesuai waktu
                 final sortedList = List<Message>.from(response.data!).map((m) {
                   if (chat.ctRealId.isNotEmpty && chat.ctRealId != '0') {
-                    final cleanCtRealId = chat.ctRealId.replaceAll(RegExp(r'[^0-9]'), '');
-                    final cleanContactId = chat.contactId.replaceAll(RegExp(r'[^0-9]'), '');
-                    final cleanExtTo = (m.toId ?? '').replaceAll(RegExp(r'[^0-9]'), '');
-                    final cleanExtFrom = (m.fromId ?? '').replaceAll(RegExp(r'[^0-9]'), '');
-                    
+                    final cleanCtRealId = chat.ctRealId.replaceAll(
+                      RegExp(r'[^0-9]'),
+                      '',
+                    );
+                    final cleanContactId = chat.contactId.replaceAll(
+                      RegExp(r'[^0-9]'),
+                      '',
+                    );
+                    final cleanExtTo = (m.toId ?? '').replaceAll(
+                      RegExp(r'[^0-9]'),
+                      '',
+                    );
+                    final cleanExtFrom = (m.fromId ?? '').replaceAll(
+                      RegExp(r'[^0-9]'),
+                      '',
+                    );
+
                     if (cleanCtRealId.isNotEmpty) {
                       bool matched = false;
-                      if (cleanExtTo.isNotEmpty && (cleanExtTo == cleanCtRealId || cleanExtTo == cleanContactId)) {
+                      if (cleanExtTo.isNotEmpty &&
+                          (cleanExtTo == cleanCtRealId ||
+                              cleanExtTo == cleanContactId)) {
                         m = m.copyWith(isMe: true);
                         matched = true;
-                      } else if (cleanExtFrom.isNotEmpty && (cleanExtFrom == cleanCtRealId || (cleanContactId.isNotEmpty && cleanExtFrom == cleanContactId))) {
+                      } else if (cleanExtFrom.isNotEmpty &&
+                          (cleanExtFrom == cleanCtRealId ||
+                              (cleanContactId.isNotEmpty &&
+                                  cleanExtFrom == cleanContactId))) {
                         m = m.copyWith(isMe: false);
                         matched = true;
                       }
-                      
-                      if (!matched && cleanExtFrom.isNotEmpty && chat.groupId.isEmpty) {
+
+                      if (!matched &&
+                          cleanExtFrom.isNotEmpty &&
+                          chat.groupId.isEmpty) {
                         m = m.copyWith(isMe: true);
                       }
                     }
@@ -1261,13 +1288,16 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 }
 
                 // Buat daftar pesan server yang masih "bisa di-match" untuk 1-to-1 deduplikasi
-                final List<Message> serverMessagesToMatch = List.from(mergedList);
+                final List<Message> serverMessagesToMatch = List.from(
+                  mergedList,
+                );
 
                 for (final localMsg in existingLocal) {
-                  // Guard: Jangan gabungkan pesan lokal yang berasal dari room lain
-                  if (chat.id.isNotEmpty && chat.id != 'null' && chat.id != '0') {
+                  // Guard: Jika pesan memiliki roomId yang berbeda dari chat.id saat ini, lewati
+                  if (chat.id.isNotEmpty &&
+                      chat.id != '0' &&
+                      chat.id != 'null') {
                     if (localMsg.roomId.isNotEmpty &&
-                        localMsg.roomId != '0' &&
                         localMsg.roomId != chat.id) {
                       continue;
                     }
@@ -1283,13 +1313,25 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                   // Cari 1 pesan server yang COCOK dan BELUM DI-MATCH
                   int matchIdx = serverMessagesToMatch.indexWhere((s) {
                     if (s.isMe == localMsg.isMe &&
-                        s.content.trim().toLowerCase() == localMsg.content.trim().toLowerCase()) {
-                      if (s.rawTime == localMsg.rawTime || s.id.isEmpty) return true;
+                        s.content.trim().toLowerCase() ==
+                            localMsg.content.trim().toLowerCase()) {
+                      if (s.rawTime == localMsg.rawTime || s.id.isEmpty)
+                        return true;
                       try {
-                        String ta = s.rawTime.replaceFirst(' ', 'T').replaceAll('ZZ', 'Z');
-                        String tb = localMsg.rawTime.replaceFirst(' ', 'T').replaceAll('ZZ', 'Z');
-                        if (!ta.endsWith('Z') && !ta.contains('+') && ta.length >= 19) ta += 'Z';
-                        if (!tb.endsWith('Z') && !tb.contains('+') && tb.length >= 19) tb += 'Z';
+                        String ta = s.rawTime
+                            .replaceFirst(' ', 'T')
+                            .replaceAll('ZZ', 'Z');
+                        String tb = localMsg.rawTime
+                            .replaceFirst(' ', 'T')
+                            .replaceAll('ZZ', 'Z');
+                        if (!ta.endsWith('Z') &&
+                            !ta.contains('+') &&
+                            ta.length >= 19)
+                          ta += 'Z';
+                        if (!tb.endsWith('Z') &&
+                            !tb.contains('+') &&
+                            tb.length >= 19)
+                          tb += 'Z';
                         final dtA = DateTime.parse(ta);
                         final dtB = DateTime.parse(tb);
                         if (dtA.difference(dtB).inMinutes.abs() <= 2) {
@@ -1308,7 +1350,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     // Tidak ketemu! Pesan lokal ini belum ada di server (atau gagal).
                     // Pertahankan pesan lokal ini di UI!
                     mergedList.add(localMsg);
-                    debugPrint('ChatDetail: 🛡️ Mempertahankan pesan lokal: "${localMsg.content}"');
+                    debugPrint(
+                      'ChatDetail: 🛡️ Mempertahankan pesan lokal: "${localMsg.content}"',
+                    );
                   }
                 }
                 final finalSorted = mergedList;
@@ -1343,13 +1387,18 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 // FIX: Populate missing reply content from local list jika server gagal mengembalikan isi ReplyMsg
                 for (int i = 0; i < _messages.length; i++) {
                   final msg = _messages[i];
-                  if (msg.repliedMessage != null && msg.repliedMessage!.content == 'Pesan terkait...') {
+                  if (msg.repliedMessage != null &&
+                      msg.repliedMessage!.content == 'Pesan terkait...') {
                     final originalId = msg.repliedMessage!.id;
                     try {
-                      final originalMsg = _messages.firstWhere((m) => m.id == originalId || m.idAlias == originalId);
+                      final originalMsg = _messages.firstWhere(
+                        (m) => m.id == originalId || m.idAlias == originalId,
+                      );
                       if (originalMsg.content.isNotEmpty) {
                         _messages[i] = msg.copyWith(
-                          repliedMessage: msg.repliedMessage!.copyWith(content: originalMsg.content)
+                          repliedMessage: msg.repliedMessage!.copyWith(
+                            content: originalMsg.content,
+                          ),
                         );
                       }
                     } catch (_) {}
@@ -1464,11 +1513,20 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     tenantId: _chatService.currentTenantId,
                     contactId: chat.contactId,
                   );
-                  Message newMsg = parsedMsg.copyWith(status: MessageStatus.read);
+                  Message newMsg = parsedMsg.copyWith(
+                    status: MessageStatus.read,
+                  );
 
                   // FILTER: Jangan injeksi pesan Telegram "Saved Messages"
-                  final sdrName = (senderData?['Name'] ?? messageData['Sender'] ?? messageData['SenderName'] ?? '').toString().toLowerCase();
-                  if (sdrName == 'saved messages' || sdrName == 'pesan tersimpan') {
+                  final sdrName =
+                      (senderData?['Name'] ??
+                              messageData['Sender'] ??
+                              messageData['SenderName'] ??
+                              '')
+                          .toString()
+                          .toLowerCase();
+                  if (sdrName == 'saved messages' ||
+                      sdrName == 'pesan tersimpan') {
                     continue; // Skip Telegram Saved Messages
                   }
 
@@ -1575,7 +1633,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   /// Sinkronisasi pesan terakhir secara akurat ke ChatProvider (Chat List)
   void _syncLastMessageToProvider() {
     if (_messages.isEmpty) return;
-    final chatProv = _chatProvider ?? (mounted ? Provider.of<ChatProvider>(context, listen: false) : null);
+    final chatProv =
+        _chatProvider ??
+        (mounted ? Provider.of<ChatProvider>(context, listen: false) : null);
     if (chatProv == null) return;
 
     final realMessages = _messages.where((m) {
@@ -1686,7 +1746,14 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
       final currentUserEmail = _currentUserEmail.isNotEmpty
           ? _currentUserEmail
-          : (_authProvider?.currentUser ?? (mounted ? Provider.of<AuthProvider>(context, listen: false).currentUser : '') ?? '');
+          : (_authProvider?.currentUser ??
+                (mounted
+                    ? Provider.of<AuthProvider>(
+                        context,
+                        listen: false,
+                      ).currentUser
+                    : '') ??
+                '');
       final response = await _chatService.getMessageHistory(
         chat.id,
         currentUserEmail,
@@ -1862,9 +1929,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     documentUrl: updatedMsg.documentUrl,
                     audioPath: resolvedType == MessageType.voice
                         ? ((_messages[i].audioPath != null &&
-                                File(_messages[i].audioPath!).existsSync())
-                            ? _messages[i].audioPath
-                            : updatedMsg.audioPath)
+                                  File(_messages[i].audioPath!).existsSync())
+                              ? _messages[i].audioPath
+                              : updatedMsg.audioPath)
                         : updatedMsg.audioPath,
                     audioDuration: _messages[i].audioDuration > 0
                         ? _messages[i].audioDuration
@@ -1943,24 +2010,42 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               // FIX: Hindari bug duplikasi dari backend (dua pesan identik dengan ID berbeda dikembalikan oleh API)
               bool isBackendDuplicate = false;
               if (msg.isMe) {
-                final cleanNew = msg.content.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '');
+                final cleanNew = msg.content.trim().toLowerCase().replaceAll(
+                  RegExp(r'\s+'),
+                  '',
+                );
                 final duplicateIdx = _messages.indexWhere((m) {
-                  if (!m.isMe || m.id.isEmpty || m.id.startsWith('temp_')) return false;
-                  final cleanM = m.content.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '');
+                  if (!m.isMe || m.id.isEmpty || m.id.startsWith('temp_'))
+                    return false;
+                  final cleanM = m.content.trim().toLowerCase().replaceAll(
+                    RegExp(r'\s+'),
+                    '',
+                  );
                   if (cleanM == cleanNew) {
                     if (m.rawTime.isNotEmpty && msg.rawTime.isNotEmpty) {
                       try {
-                        final mt = DateTime.parse(m.rawTime.replaceFirst(' ', 'T').replaceAll('ZZ', 'Z'));
-                        final nt = DateTime.parse(msg.rawTime.replaceFirst(' ', 'T').replaceAll('ZZ', 'Z'));
-                        if (mt.difference(nt).inSeconds.abs() <= 10) return true; // Sangat berdekatan = duplikat backend
+                        final mt = DateTime.parse(
+                          m.rawTime
+                              .replaceFirst(' ', 'T')
+                              .replaceAll('ZZ', 'Z'),
+                        );
+                        final nt = DateTime.parse(
+                          msg.rawTime
+                              .replaceFirst(' ', 'T')
+                              .replaceAll('ZZ', 'Z'),
+                        );
+                        if (mt.difference(nt).inSeconds.abs() <= 10)
+                          return true; // Sangat berdekatan = duplikat backend
                       } catch (_) {}
                     }
                   }
                   return false;
                 });
-                
+
                 if (duplicateIdx != -1) {
-                  debugPrint('AckPolling: 🚫 Mengabaikan pesan duplikat dari backend! ID: ${msg.id}');
+                  debugPrint(
+                    'AckPolling: 🚫 Mengabaikan pesan duplikat dari backend! ID: ${msg.id}',
+                  );
                   isBackendDuplicate = true;
                   updatedCurrentIds.add(msg.id); // Anggap sudah diproses
                 }
@@ -1982,36 +2067,54 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     RegExp(r'\s+'),
                     '',
                   );
-                  
-                  if (cleanM.isNotEmpty && cleanNew.isNotEmpty && 
-                      (cleanM == cleanNew || cleanNew.contains(cleanM) || cleanM.contains(cleanNew))) {
+
+                  if (cleanM.isNotEmpty &&
+                      cleanNew.isNotEmpty &&
+                      (cleanM == cleanNew ||
+                          cleanNew.contains(cleanM) ||
+                          cleanM.contains(cleanNew))) {
                     return true;
                   }
-                  
-                  if (msg.messageType != MessageType.text && m.messageType == msg.messageType) {
+
+                  if (msg.messageType != MessageType.text &&
+                      m.messageType == msg.messageType) {
                     if (m.time == msg.time) return true;
                     // FIX: Cocokkan voice note berdasarkan nama file audio
-                    if (m.messageType == MessageType.voice && m.audioPath != null && msg.audioPath != null) {
-                      final nameLocal = m.audioPath!.split('?').first.split('/').last;
-                      final nameServer = msg.audioPath!.split('?').first.split('/').last;
-                      if (nameLocal.isNotEmpty && nameServer.isNotEmpty &&
-                          (nameLocal == nameServer || nameServer.contains(nameLocal) || nameLocal.contains(nameServer))) {
+                    if (m.messageType == MessageType.voice &&
+                        m.audioPath != null &&
+                        msg.audioPath != null) {
+                      final nameLocal = m.audioPath!
+                          .split('?')
+                          .first
+                          .split('/')
+                          .last;
+                      final nameServer = msg.audioPath!
+                          .split('?')
+                          .first
+                          .split('/')
+                          .last;
+                      if (nameLocal.isNotEmpty &&
+                          nameServer.isNotEmpty &&
+                          (nameLocal == nameServer ||
+                              nameServer.contains(nameLocal) ||
+                              nameLocal.contains(nameServer))) {
                         return true;
                       }
                     }
                   }
-                  
+
                   return false;
                 });
 
                 if (matchIdx != -1) {
                   final existingMsg = _messages[matchIdx];
-                  final keepAudioPath = existingMsg.messageType == MessageType.voice &&
-                      existingMsg.audioPath != null &&
-                      existingMsg.audioPath!.isNotEmpty &&
-                      File(existingMsg.audioPath!).existsSync()
-                          ? existingMsg.audioPath
-                          : (msg.audioPath ?? existingMsg.audioPath);
+                  final keepAudioPath =
+                      existingMsg.messageType == MessageType.voice &&
+                          existingMsg.audioPath != null &&
+                          existingMsg.audioPath!.isNotEmpty &&
+                          File(existingMsg.audioPath!).existsSync()
+                      ? existingMsg.audioPath
+                      : (msg.audioPath ?? existingMsg.audioPath);
 
                   _messages[matchIdx] = _messages[matchIdx].copyWith(
                     id: msg.id,
@@ -2050,18 +2153,28 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 }
               } else {
                 // UPDATE: Cocokkan pesan masuk instan 'temp_sub_' dengan pesan server resmi
-                final cleanNew = msg.content.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '');
+                final cleanNew = msg.content.trim().toLowerCase().replaceAll(
+                  RegExp(r'\s+'),
+                  '',
+                );
                 final matchIdx = _messages.indexWhere((m) {
                   if (m.isMe || !m.id.startsWith('temp_sub_')) return false;
-                  final cleanM = m.content.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '');
-                  return cleanM.isNotEmpty && cleanNew.isNotEmpty && cleanM == cleanNew;
+                  final cleanM = m.content.trim().toLowerCase().replaceAll(
+                    RegExp(r'\s+'),
+                    '',
+                  );
+                  return cleanM.isNotEmpty &&
+                      cleanNew.isNotEmpty &&
+                      cleanM == cleanNew;
                 });
 
                 if (matchIdx != -1) {
                   _messages[matchIdx] = msg;
                   matchedPending = true;
                   updatedCurrentIds.add(msg.id);
-                  debugPrint('ChatSync: ✅ Replaced instant temp_sub message with official server message ID: ${msg.id}');
+                  debugPrint(
+                    'ChatSync: ✅ Replaced instant temp_sub message with official server message ID: ${msg.id}',
+                  );
                 }
               }
               if (matchedPending) continue;
@@ -2111,25 +2224,46 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             // Hapus duplikat yang mungkin lolos (pesan terkirim dengan teks sama dan waktu berdekatan)
             final uniqueMessages = <Message>[];
             for (final m in _messages) {
-              if (m.isMe && m.messageType == MessageType.text && m.content.isNotEmpty) {
-                final cleanM = m.content.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '');
+              if (m.isMe &&
+                  m.messageType == MessageType.text &&
+                  m.content.isNotEmpty) {
+                final cleanM = m.content.trim().toLowerCase().replaceAll(
+                  RegExp(r'\s+'),
+                  '',
+                );
                 final isDuplicate = uniqueMessages.any((existing) {
-                  if (!existing.isMe || existing.messageType != MessageType.text) return false;
-                  final cleanExisting = existing.content.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '');
+                  if (!existing.isMe ||
+                      existing.messageType != MessageType.text)
+                    return false;
+                  final cleanExisting = existing.content
+                      .trim()
+                      .toLowerCase()
+                      .replaceAll(RegExp(r'\s+'), '');
                   if (cleanM == cleanExisting) {
                     // Cek kedekatan waktu
                     if (m.rawTime.isNotEmpty && existing.rawTime.isNotEmpty) {
                       try {
-                        final mt = DateTime.parse(m.rawTime.replaceFirst(' ', 'T').replaceAll('ZZ', 'Z'));
-                        final et = DateTime.parse(existing.rawTime.replaceFirst(' ', 'T').replaceAll('ZZ', 'Z'));
-                        if (mt.difference(et).inSeconds.abs() <= 15) return true; // Sangat berdekatan = hapus
+                        final mt = DateTime.parse(
+                          m.rawTime
+                              .replaceFirst(' ', 'T')
+                              .replaceAll('ZZ', 'Z'),
+                        );
+                        final et = DateTime.parse(
+                          existing.rawTime
+                              .replaceFirst(' ', 'T')
+                              .replaceAll('ZZ', 'Z'),
+                        );
+                        if (mt.difference(et).inSeconds.abs() <= 15)
+                          return true; // Sangat berdekatan = hapus
                       } catch (_) {}
                     }
                   }
                   return false;
                 });
                 if (isDuplicate) {
-                  debugPrint('AckPolling Cleanup: 🗑️ Menghapus duplikat agresif -> ${m.content}');
+                  debugPrint(
+                    'AckPolling Cleanup: 🗑️ Menghapus duplikat agresif -> ${m.content}',
+                  );
                   continue; // Jangan masukkan ke uniqueMessages
                 }
               }
@@ -2150,19 +2284,26 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               // melainkan posisikan penanda di awal pesan baru tersebut dan tampilkan tombol scroll ke bawah dengan counter.
               if (mounted) {
                 setState(() {
-                  _firstUnreadMessageId ??= newCustomerIncomingMessages.first.id;
-                  _initialUnreadCount = (_initialUnreadCount > 0 ? _initialUnreadCount : 0) + newCustomerIncomingMessages.length;
-                  _unreadIncomingCountWhileScrolled += newCustomerIncomingMessages.length;
+                  _firstUnreadMessageId ??=
+                      newCustomerIncomingMessages.first.id;
+                  _initialUnreadCount =
+                      (_initialUnreadCount > 0 ? _initialUnreadCount : 0) +
+                      newCustomerIncomingMessages.length;
+                  _unreadIncomingCountWhileScrolled +=
+                      newCustomerIncomingMessages.length;
                   _showScrollToBottomButton = true;
                 });
               }
-            } else if (_isNearBottom && _unreadIncomingCountWhileScrolled == 0 && _firstUnreadMessageId == null) {
+            } else if (_isNearBottom &&
+                _unreadIncomingCountWhileScrolled == 0 &&
+                _firstUnreadMessageId == null) {
               _scrollToBottom();
             } else {
               if (mounted) {
                 setState(() {
                   if (newCustomerIncomingMessages.isNotEmpty) {
-                    _unreadIncomingCountWhileScrolled += newCustomerIncomingMessages.length;
+                    _unreadIncomingCountWhileScrolled +=
+                        newCustomerIncomingMessages.length;
                     if (_firstUnreadMessageId != null) {
                       _initialUnreadCount += newCustomerIncomingMessages.length;
                     }
@@ -2204,7 +2345,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     // PERF: 2.5 detik terlalu agresif (24 request/menit per room). SignalR
     // sudah menangani pesan real-time, polling ini hanya jaring pengaman
     // untuk sinkronisasi ID/ack, jadi 6 detik sudah cukup.
-    _ackPollTimer = Timer.periodic(const Duration(milliseconds: 6000), (timer) async {
+    _ackPollTimer = Timer.periodic(const Duration(milliseconds: 6000), (
+      timer,
+    ) async {
       if (!mounted) {
         timer.cancel();
         return;
@@ -2226,28 +2369,47 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       final incomingRoomId = roomData['Id']?.toString() ?? '';
       if (incomingRoomId.isEmpty) return;
 
-      final isMatch = incomingRoomId == chat.id ||
+      final isMatch =
+          incomingRoomId == chat.id ||
           (chat.contactId.isNotEmpty && incomingRoomId == chat.contactId) ||
           (chat.ctRealId.isNotEmpty && incomingRoomId == chat.ctRealId) ||
           (chat.link.isNotEmpty && incomingRoomId == chat.link) ||
           (chat.groupId.isNotEmpty && incomingRoomId == chat.groupId) ||
-          (incomingRoomId.replaceAll(RegExp(r'[^0-9]'), '') == chat.id.replaceAll(RegExp(r'[^0-9]'), ''));
+          (incomingRoomId.replaceAll(RegExp(r'[^0-9]'), '') ==
+              chat.id.replaceAll(RegExp(r'[^0-9]'), ''));
 
       if (isMatch) {
-        debugPrint('ChatDetailPage: ⚡ Realtime TerimaSubSpv matched for room $incomingRoomId! Processing...');
+        debugPrint(
+          'ChatDetailPage: ⚡ Realtime TerimaSubSpv matched for room $incomingRoomId! Processing...',
+        );
 
         // 1. INSTANT BUBBLE: Tampilkan pesan masuk seketika (0 ms delay) jika ada pesan baru dari lawan bicara
-        final lastMsg = (roomData['LastMsg'] ?? roomData['lastMsg'] ?? '').toString();
-        final timeMsg = (roomData['TimeMsg'] ?? roomData['timeMsg'] ?? '').toString();
-        final sdrMsg = (roomData['SdrMsg'] ?? roomData['sdrMsg'] ?? '').toString().toLowerCase();
-        final lastIsMe = roomData['LastIsMe'] == true || roomData['lastIsMe'] == true || sdrMsg == 'me';
+        final lastMsg = (roomData['LastMsg'] ?? roomData['lastMsg'] ?? '')
+            .toString();
+        final timeMsg = (roomData['TimeMsg'] ?? roomData['timeMsg'] ?? '')
+            .toString();
+        final sdrMsg = (roomData['SdrMsg'] ?? roomData['sdrMsg'] ?? '')
+            .toString()
+            .toLowerCase();
+        final lastIsMe =
+            roomData['LastIsMe'] == true ||
+            roomData['lastIsMe'] == true ||
+            sdrMsg == 'me';
         final upBy = roomData['UpBy']?.toString();
         final isFromCustomer = !lastIsMe && (upBy == null || upBy == '0');
 
-        if (isFromCustomer && lastMsg.isNotEmpty && lastMsg != 'Site.Inbox.DeletedMessage') {
-          final cleanLast = lastMsg.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '');
+        if (isFromCustomer &&
+            lastMsg.isNotEmpty &&
+            lastMsg != 'Site.Inbox.DeletedMessage') {
+          final cleanLast = lastMsg.trim().toLowerCase().replaceAll(
+            RegExp(r'\s+'),
+            '',
+          );
           final alreadyPresent = _messages.any((m) {
-            final cleanM = m.content.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '');
+            final cleanM = m.content.trim().toLowerCase().replaceAll(
+              RegExp(r'\s+'),
+              '',
+            );
             return cleanM == cleanLast;
           });
 
@@ -2256,7 +2418,10 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             if (timeMsg.isNotEmpty) {
               try {
                 String tStr = timeMsg;
-                if (!tStr.endsWith('Z') && !tStr.contains('+') && tStr.length >= 19) tStr += 'Z';
+                if (!tStr.endsWith('Z') &&
+                    !tStr.contains('+') &&
+                    tStr.length >= 19)
+                  tStr += 'Z';
                 parsedTime = DateTime.parse(tStr).toLocal();
               } catch (_) {}
             }
@@ -2265,7 +2430,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               id: 'temp_sub_${DateTime.now().millisecondsSinceEpoch}',
               content: lastMsg.contains('[-{=||=}-]') ? '📍 Location' : lastMsg,
               time: _formatFullTime(parsedTime),
-              rawTime: timeMsg.isNotEmpty ? timeMsg : DateTime.now().toIso8601String(),
+              rawTime: timeMsg.isNotEmpty
+                  ? timeMsg
+                  : DateTime.now().toIso8601String(),
               isMe: false,
               status: MessageStatus.read,
               fromId: chat.sender,
@@ -2280,7 +2447,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 }
               }
             });
-            if (_isNearBottom && _unreadIncomingCountWhileScrolled == 0 && _firstUnreadMessageId == null) {
+            if (_isNearBottom &&
+                _unreadIncomingCountWhileScrolled == 0 &&
+                _firstUnreadMessageId == null) {
               _scrollToBottom();
             } else {
               setState(() {
@@ -2288,7 +2457,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               });
             }
             _syncLastMessageToProvider();
-            debugPrint('ChatDetailPage: ⚡ Rendered instant message bubble from TerimaSubSpv!');
+            debugPrint(
+              'ChatDetailPage: ⚡ Rendered instant message bubble from TerimaSubSpv!',
+            );
           }
         }
 
@@ -2326,31 +2497,61 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           chat.chId == '2' ||
           chat.channelType.toLowerCase().contains('telegram') ||
           chat.channelName.toLowerCase().contains('telegram');
-      final sdrName = (senderData?['Name'] ?? messageData['Sender'] ?? messageData['SenderName'] ?? '').toString().toLowerCase();
+      final sdrName =
+          (senderData?['Name'] ??
+                  messageData['Sender'] ??
+                  messageData['SenderName'] ??
+                  '')
+              .toString()
+              .toLowerCase();
       if (sdrName == 'saved messages' || sdrName == 'pesan tersimpan') {
-        debugPrint('ChatDetailPage: 🛡️ Ignored Telegram Saved Message from SignalR');
+        debugPrint(
+          'ChatDetailPage: 🛡️ Ignored Telegram Saved Message from SignalR',
+        );
         return;
       }
 
       // Channel & Account Isolation Guard: Cegah pesan channel/akun lain masuk (hanya untuk WhatsApp / non-Telegram)
       if (!isTelegram) {
-        final incomingChId = (messageData['ChId'] ?? messageData['ch_id'])?.toString() ?? '';
-        if (incomingChId.isNotEmpty && chat.chId.isNotEmpty && incomingChId != chat.chId) {
-          debugPrint('ChatDetailPage: 🛡️ Ignored message from different channel: incoming $incomingChId vs current ${chat.chId}');
+        final incomingChId =
+            (messageData['ChId'] ?? messageData['ch_id'])?.toString() ?? '';
+        if (incomingChId.isNotEmpty &&
+            chat.chId.isNotEmpty &&
+            incomingChId != chat.chId) {
+          debugPrint(
+            'ChatDetailPage: 🛡️ Ignored message from different channel: incoming $incomingChId vs current ${chat.chId}',
+          );
           return;
         }
 
-        final incomingAccId = (messageData['ChAccId'] ?? messageData['IdAccount'] ?? messageData['AccountId'])?.toString() ?? '';
-        if (incomingAccId.isNotEmpty && chat.accountId.isNotEmpty && incomingAccId != '0' && chat.accountId != '0' && incomingAccId != chat.accountId) {
-          debugPrint('ChatDetailPage: 🛡️ Ignored message from different account: incoming $incomingAccId vs current ${chat.accountId}');
+        final incomingAccId =
+            (messageData['ChAccId'] ??
+                    messageData['IdAccount'] ??
+                    messageData['AccountId'])
+                ?.toString() ??
+            '';
+        if (incomingAccId.isNotEmpty &&
+            chat.accountId.isNotEmpty &&
+            incomingAccId != '0' &&
+            chat.accountId != '0' &&
+            incomingAccId != chat.accountId) {
+          debugPrint(
+            'ChatDetailPage: 🛡️ Ignored message from different account: incoming $incomingAccId vs current ${chat.accountId}',
+          );
           return;
         }
       }
 
-      final isResolved = chat.status.toLowerCase() == 'resolved' || chat.status == '3' || chat.isArchived;
+      final isResolved =
+          chat.status.toLowerCase() == 'resolved' ||
+          chat.status == '3' ||
+          chat.isArchived;
 
       final numericChatId = chat.id.replaceAll(RegExp(r'[^0-9\-]'), '');
-      final numericIncomingId = incomingRoomId.replaceAll(RegExp(r'[^0-9\-]'), '');
+      final numericIncomingId = incomingRoomId.replaceAll(
+        RegExp(r'[^0-9\-]'),
+        '',
+      );
       final numericMsgRoomId = msgRoomId.replaceAll(RegExp(r'[^0-9\-]'), '');
 
       bool isMatch = false;
@@ -2358,10 +2559,18 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       // 1. Direct RoomId match (selalu valid untuk semua kondisi, termasuk resolved)
       if ((incomingRoomId.isNotEmpty && incomingRoomId == chat.id) ||
           (msgRoomId.isNotEmpty && msgRoomId == chat.id) ||
-          (numericIncomingId.isNotEmpty && numericChatId.isNotEmpty && numericIncomingId == numericChatId) ||
-          (numericMsgRoomId.isNotEmpty && numericChatId.isNotEmpty && numericMsgRoomId == numericChatId) ||
-          (incomingRoomId.isNotEmpty && incomingRoomId.replaceAll(RegExp(r'^[0-9]+_'), '') == chat.id.replaceAll(RegExp(r'^[0-9]+_'), '')) ||
-          (msgRoomId.isNotEmpty && msgRoomId.replaceAll(RegExp(r'^[0-9]+_'), '') == chat.id.replaceAll(RegExp(r'^[0-9]+_'), ''))) {
+          (numericIncomingId.isNotEmpty &&
+              numericChatId.isNotEmpty &&
+              numericIncomingId == numericChatId) ||
+          (numericMsgRoomId.isNotEmpty &&
+              numericChatId.isNotEmpty &&
+              numericMsgRoomId == numericChatId) ||
+          (incomingRoomId.isNotEmpty &&
+              incomingRoomId.replaceAll(RegExp(r'^[0-9]+_'), '') ==
+                  chat.id.replaceAll(RegExp(r'^[0-9]+_'), '')) ||
+          (msgRoomId.isNotEmpty &&
+              msgRoomId.replaceAll(RegExp(r'^[0-9]+_'), '') ==
+                  chat.id.replaceAll(RegExp(r'^[0-9]+_'), ''))) {
         isMatch = true;
       }
 
@@ -2381,7 +2590,13 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         void addCandidate(String? v) {
           if (v == null) return;
           final s = v.trim();
-          if (s.isEmpty || s == '0' || s == 'null' || s == 'false' || s == 'true' || s == 'undefined') return;
+          if (s.isEmpty ||
+              s == '0' ||
+              s == 'null' ||
+              s == 'false' ||
+              s == 'true' ||
+              s == 'undefined')
+            return;
           candidateSet.add(s);
           final cp = cleanPhone(s);
           if (cp.isNotEmpty && cp != s) candidateSet.add(cp);
@@ -2403,7 +2618,13 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         void addMyId(String? v) {
           if (v == null) return;
           final s = v.trim();
-          if (s.isEmpty || s == '0' || s == 'null' || s == 'false' || s == 'true' || s == 'undefined') return;
+          if (s.isEmpty ||
+              s == '0' ||
+              s == 'null' ||
+              s == 'false' ||
+              s == 'true' ||
+              s == 'undefined')
+            return;
           myIdSet.add(s);
           final cp = cleanPhone(s);
           if (cp.isNotEmpty && cp != s) myIdSet.add(cp);
@@ -2424,7 +2645,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         final intersection = candidateSet.intersection(myIdSet);
         if (intersection.isNotEmpty) {
           isMatch = true;
-          debugPrint('ChatDetailPage: ✅ Room matched via identifier: ${intersection.first}');
+          debugPrint(
+            'ChatDetailPage: ✅ Room matched via identifier: ${intersection.first}',
+          );
         }
       }
 
@@ -2436,10 +2659,14 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       }
 
       // 🚨 AUTO-REPAIR CHAT ID DI REALTIME 🚨
-      final realRoomId = (msgRoomId.isNotEmpty && msgRoomId != '0' && msgRoomId != 'null')
+      final realRoomId =
+          (msgRoomId.isNotEmpty && msgRoomId != '0' && msgRoomId != 'null')
           ? msgRoomId
           : incomingRoomId;
-      if ((chat.id.isEmpty || chat.id == '0' || chat.id == 'null' || !RegExp(r'^[0-9]+$').hasMatch(chat.id)) &&
+      if ((chat.id.isEmpty ||
+              chat.id == '0' ||
+              chat.id == 'null' ||
+              !RegExp(r'^[0-9]+$').hasMatch(chat.id)) &&
           realRoomId.isNotEmpty &&
           realRoomId != '0' &&
           realRoomId != 'null' &&
@@ -2483,7 +2710,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         final echoId = messageData['Id']?.toString() ?? '';
 
         if (echoId.isNotEmpty && _deletedMessageIds.contains(echoId)) {
-          debugPrint('SignalR: 🗑️ Mengabaikan pesan echo $echoId karena sudah dihapus user.');
+          debugPrint(
+            'SignalR: 🗑️ Mengabaikan pesan echo $echoId karena sudah dihapus user.',
+          );
           return;
         }
 
@@ -2593,7 +2822,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       // Extract ID and check duplicate
       final incomingId = messageData['Id']?.toString() ?? '';
       if (incomingId.isNotEmpty && _deletedMessageIds.contains(incomingId)) {
-        debugPrint('SignalR: 🗑️ Mengabaikan pesan masuk $incomingId karena sudah dihapus user.');
+        debugPrint(
+          'SignalR: 🗑️ Mengabaikan pesan masuk $incomingId karena sudah dihapus user.',
+        );
         return;
       }
 
@@ -2629,16 +2860,29 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       // Gunakan Message.fromJson agar semua parsing tipe pesan berjalan sempurna!
       final currentUserEmail = _currentUserEmail.isNotEmpty
           ? _currentUserEmail
-          : (_authProvider?.currentUser ?? (mounted ? Provider.of<AuthProvider>(context, listen: false).currentUser : '') ?? '');
+          : (_authProvider?.currentUser ??
+                (mounted
+                    ? Provider.of<AuthProvider>(
+                        context,
+                        listen: false,
+                      ).currentUser
+                    : '') ??
+                '');
 
       try {
         // DEBUG: Log tipe pesan masuk via SignalR
-        final incomingType = messageData['Type']?.toString() ?? messageData['type']?.toString() ?? messageData['BodyType']?.toString() ?? '';
+        final incomingType =
+            messageData['Type']?.toString() ??
+            messageData['type']?.toString() ??
+            messageData['BodyType']?.toString() ??
+            '';
         final incomingMsg = messageData['Msg']?.toString() ?? '';
         if (incomingType.isNotEmpty && incomingType != '1') {
-          debugPrint('🔍 ChatDetail: SignalR message | Type=$incomingType | Msg="${incomingMsg.length > 100 ? incomingMsg.substring(0, 100) : incomingMsg}"');
+          debugPrint(
+            '🔍 ChatDetail: SignalR message | Type=$incomingType | Msg="${incomingMsg.length > 100 ? incomingMsg.substring(0, 100) : incomingMsg}"',
+          );
         }
-        
+
         var parsedMessage = Message.fromJson(
           messageData,
           currentUserEmail,
@@ -2651,13 +2895,18 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         Message newMessage = parsedMessage.copyWith(status: MessageStatus.read);
 
         // FIX: Populate missing reply content from local list untuk pesan realtime masuk
-        if (newMessage.repliedMessage != null && newMessage.repliedMessage!.content == 'Pesan terkait...') {
+        if (newMessage.repliedMessage != null &&
+            newMessage.repliedMessage!.content == 'Pesan terkait...') {
           final originalId = newMessage.repliedMessage!.id;
           try {
-            final originalMsg = _messages.firstWhere((m) => m.id == originalId || m.idAlias == originalId);
+            final originalMsg = _messages.firstWhere(
+              (m) => m.id == originalId || m.idAlias == originalId,
+            );
             if (originalMsg.content.isNotEmpty) {
               newMessage = newMessage.copyWith(
-                repliedMessage: newMessage.repliedMessage!.copyWith(content: originalMsg.content)
+                repliedMessage: newMessage.repliedMessage!.copyWith(
+                  content: originalMsg.content,
+                ),
               );
             }
           } catch (_) {}
@@ -2673,25 +2922,39 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 if (newMessage.id.isNotEmpty && m.id == newMessage.id) {
                   return true;
                 }
-                
+
                 // UPDATE: Coba cocokkan jika ID lokal kosong ATAU berawalan 'temp_'
                 if (m.isMe && (m.id.isEmpty || m.id.startsWith('temp_'))) {
                   // 1. Cocokkan berdasarkan teks eksak (bersihkan whitespace)
-                  final cleanM = m.content.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '');
-                  final cleanNew = newMessage.content.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '');
-                  if (cleanM.isNotEmpty && cleanNew.isNotEmpty && 
-                      (cleanM == cleanNew || cleanNew.contains(cleanM) || cleanM.contains(cleanNew))) {
+                  final cleanM = m.content.trim().toLowerCase().replaceAll(
+                    RegExp(r'\s+'),
+                    '',
+                  );
+                  final cleanNew = newMessage.content
+                      .trim()
+                      .toLowerCase()
+                      .replaceAll(RegExp(r'\s+'), '');
+                  if (cleanM.isNotEmpty &&
+                      cleanNew.isNotEmpty &&
+                      (cleanM == cleanNew ||
+                          cleanNew.contains(cleanM) ||
+                          cleanM.contains(cleanNew))) {
                     return true;
                   }
-                  
+
                   // 2. FIX: Untuk lampiran (Gambar, Dokumen, Voice Note), teks lokal ('📷 Photo')
                   // TIDAK AKAN COCOK dengan JSON/URL dari server. Cocokkan berdasarkan tipe media + waktu toleransi 2 detik.
-                  if (newMessage.messageType != MessageType.text && m.messageType == newMessage.messageType) {
+                  if (newMessage.messageType != MessageType.text &&
+                      m.messageType == newMessage.messageType) {
                     // FIX: Perluas toleransi waktu dari exact match menjadi 2 detik
                     if (m.rawTime.isNotEmpty && newMessage.rawTime.isNotEmpty) {
                       try {
-                        final timeM = DateTime.parse(m.rawTime.replaceAll('ZZ', 'Z'));
-                        final timeNew = DateTime.parse(newMessage.rawTime.replaceAll('ZZ', 'Z'));
+                        final timeM = DateTime.parse(
+                          m.rawTime.replaceAll('ZZ', 'Z'),
+                        );
+                        final timeNew = DateTime.parse(
+                          newMessage.rawTime.replaceAll('ZZ', 'Z'),
+                        );
                         if (timeNew.difference(timeM).inSeconds.abs() <= 2) {
                           return true;
                         }
@@ -2700,32 +2963,44 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     // Fallback: jika rawTime kosong, gunakan time (display time) dengan toleransi 2 detik
                     if (m.time.isNotEmpty && newMessage.time.isNotEmpty) {
                       try {
-                        final timeM = DateTime.parse(m.time.replaceAll('ZZ', 'Z'));
-                        final timeNew = DateTime.parse(newMessage.time.replaceAll('ZZ', 'Z'));
+                        final timeM = DateTime.parse(
+                          m.time.replaceAll('ZZ', 'Z'),
+                        );
+                        final timeNew = DateTime.parse(
+                          newMessage.time.replaceAll('ZZ', 'Z'),
+                        );
                         if (timeNew.difference(timeM).inSeconds.abs() <= 2) {
                           return true;
                         }
                       } catch (_) {}
                     }
                   }
-                  
+
                   // 3. FIX: Fallback waktu diperluas dari 60 ke 5 detik untuk pesan dengan tipe sama
-                  if (m.messageType == newMessage.messageType && m.rawTime.isNotEmpty && newMessage.rawTime.isNotEmpty) {
+                  if (m.messageType == newMessage.messageType &&
+                      m.rawTime.isNotEmpty &&
+                      newMessage.rawTime.isNotEmpty) {
                     try {
-                      final timeM = DateTime.parse(m.rawTime.replaceAll('ZZ', 'Z'));
-                      final timeNew = DateTime.parse(newMessage.rawTime.replaceAll('ZZ', 'Z'));
+                      final timeM = DateTime.parse(
+                        m.rawTime.replaceAll('ZZ', 'Z'),
+                      );
+                      final timeNew = DateTime.parse(
+                        newMessage.rawTime.replaceAll('ZZ', 'Z'),
+                      );
                       if (timeNew.difference(timeM).inSeconds.abs() <= 5) {
                         return true;
                       }
                     } catch (_) {}
                   }
-                  
+
                   // 4. Fallback tambahan: jika konten mirip (substring) dan tipe sama
                   if (m.messageType == newMessage.messageType) {
                     final contentM = m.content.trim().toLowerCase();
                     final contentNew = newMessage.content.trim().toLowerCase();
-                    if (contentM.isNotEmpty && contentNew.isNotEmpty &&
-                        (contentM.contains(contentNew) || contentNew.contains(contentM))) {
+                    if (contentM.isNotEmpty &&
+                        contentNew.isNotEmpty &&
+                        (contentM.contains(contentNew) ||
+                            contentNew.contains(contentM))) {
                       return true;
                     }
                   }
@@ -2798,7 +3073,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           });
           if (newMessage.isMe) {
             _scrollToBottom();
-          } else if (_isNearBottom && _unreadIncomingCountWhileScrolled == 0 && _firstUnreadMessageId == null) {
+          } else if (_isNearBottom &&
+              _unreadIncomingCountWhileScrolled == 0 &&
+              _firstUnreadMessageId == null) {
             _scrollToBottom();
           } else {
             setState(() {
@@ -2813,7 +3090,10 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
       // Tell server we've read this message
       try {
-        final roomIdInt = int.tryParse(chat.id) ?? int.tryParse(msgRoomId) ?? int.tryParse(incomingRoomId);
+        final roomIdInt =
+            int.tryParse(chat.id) ??
+            int.tryParse(msgRoomId) ??
+            int.tryParse(incomingRoomId);
         if (roomIdInt != null) {
           signalR.sendReadCount(roomIdInt);
         }
@@ -2869,8 +3149,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     if (_firstUnreadMessageId == null || _firstUnreadMessageId!.isEmpty) return;
     if (!_scrollController.hasClients) return;
 
-    final displayMessages =
-        _messages.where((m) => !m.isSystemMessage).toList();
+    final displayMessages = _messages.where((m) => !m.isSystemMessage).toList();
     final firstIdx = displayMessages.indexWhere(
       (m) =>
           m.id == _firstUnreadMessageId ||
@@ -2895,8 +3174,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       _allInitialUnreadSeen = true;
       bool changed = false;
       for (final m in unreadList) {
-        final effectiveId =
-            m.id.isNotEmpty ? m.id : (m.idAlias ?? 'msg_${m.hashCode}');
+        final effectiveId = m.id.isNotEmpty
+            ? m.id
+            : (m.idAlias ?? 'msg_${m.hashCode}');
         if (_passedUnreadMessageIds.add(effectiveId)) {
           changed = true;
         }
@@ -2922,7 +3202,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         : null;
 
     // Hitung juga berbasis rasio penurunan scroll offset dari posisi awal
-    final totalDistance = _initialUnreadOffset > 30.0 ? _initialUnreadOffset : 0.0;
+    final totalDistance = _initialUnreadOffset > 30.0
+        ? _initialUnreadOffset
+        : 0.0;
     final scrolledDistance = totalDistance > 0
         ? (totalDistance - currentPixels).clamp(0.0, totalDistance)
         : 0.0;
@@ -2932,8 +3214,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
     for (int i = 0; i < unreadList.length; i++) {
       final msg = unreadList[i];
-      final effectiveId =
-          msg.id.isNotEmpty ? msg.id : (msg.idAlias ?? 'msg_${msg.hashCode}');
+      final effectiveId = msg.id.isNotEmpty
+          ? msg.id
+          : (msg.idAlias ?? 'msg_${msg.hashCode}');
       if (_passedUnreadMessageIds.contains(effectiveId)) continue;
 
       bool passed = false;
@@ -2985,8 +3268,8 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   }
 
   // FITUR: Scroll ke Pesan Terbaru (Paling Bawah)
-// FUNGSI: Saat membuka ruang obrolan, otomatis scroll ke pesan terbaru (bawah).
-//          Menandai semua pesan sebagai sudah dibaca dan menyembunyikan tombol scroll-to-bottom.
+  // FUNGSI: Saat membuka ruang obrolan, otomatis scroll ke pesan terbaru (bawah).
+  //          Menandai semua pesan sebagai sudah dibaca dan menyembunyikan tombol scroll-to-bottom.
   void _handleInitialScroll() {
     if (!_scrollController.hasClients || _messages.isEmpty) return;
     if (_hasPositionedAtUnread) return;
@@ -3023,7 +3306,14 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
     final currentUserEmail = _currentUserEmail.isNotEmpty
         ? _currentUserEmail
-        : (_authProvider?.currentUser ?? (mounted ? Provider.of<AuthProvider>(context, listen: false).currentUser : '') ?? '');
+        : (_authProvider?.currentUser ??
+              (mounted
+                  ? Provider.of<AuthProvider>(
+                      context,
+                      listen: false,
+                    ).currentUser
+                  : '') ??
+              '');
 
     final response = await _chatService.getMessageHistory(
       chat.id,
@@ -3055,9 +3345,11 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               .where((id) => id.isNotEmpty)
               .toSet();
           final uniqueOlder = olderMessages
-              .where((m) =>
-                  (m.id.isEmpty || !existingIds.contains(m.id)) &&
-                  !_deletedMessageIds.contains(m.id))
+              .where(
+                (m) =>
+                    (m.id.isEmpty || !existingIds.contains(m.id)) &&
+                    !_deletedMessageIds.contains(m.id),
+              )
               .toList();
 
           // Prepend older messages. Server returns ASCENDING [oldest, older].
@@ -3112,88 +3404,159 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       }
 
       // Background refresh detail room agar AccountId, LinkId, ExtId, dan GroupId selalu yang terbaru dari database
-      _chatService.getDetailRoom(chat.id).then((resp) {
-        if (!mounted || resp.isError || resp.data == null) return;
-        final d = resp.data!;
-        final chAccId = d['ChAccId']?.toString();
-        final chAccNm = d['ChAcc']?.toString();
-        final linkId = d['CtId']?.toString() ?? d['LinkId']?.toString();
-        final extId = d['CtIdExt']?.toString() ?? d['ExtId']?.toString();
+      _chatService
+          .getDetailRoom(chat.id)
+          .then((resp) {
+            if (!mounted || resp.isError || resp.data == null) return;
+            final d = resp.data!;
+            final chAccId = d['ChAccId']?.toString();
+            final chAccNm = d['ChAcc']?.toString();
+            final linkId = d['CtId']?.toString() ?? d['LinkId']?.toString();
+            final extId = d['CtIdExt']?.toString() ?? d['ExtId']?.toString();
 
-        final rMap = d['Room'] is Map ? Map<String, dynamic>.from(d['Room'] as Map) : d;
-        final rawGrpId = (rMap['GrpId'] ?? rMap['grp_id'] ?? rMap['GroupId'] ?? rMap['groupId'] ?? rMap['IdGroup'])?.toString();
-        final rawGrpNm = (rMap['Grp'] ?? rMap['GroupNm'] ?? rMap['GroupName'] ?? rMap['group_name'])?.toString();
-        final rawCtReal = rMap['CtRealId']?.toString();
-        final isGrpFlag = rMap['IsGrp'] == 1 || rMap['IsGrp'] == true || rMap['IsGroup'] == 1 || rMap['IsGroup'] == true;
+            final rMap = d['Room'] is Map
+                ? Map<String, dynamic>.from(d['Room'] as Map)
+                : d;
+            final rawGrpId =
+                (rMap['GrpId'] ??
+                        rMap['grp_id'] ??
+                        rMap['GroupId'] ??
+                        rMap['groupId'] ??
+                        rMap['IdGroup'])
+                    ?.toString();
+            final rawGrpNm =
+                (rMap['Grp'] ??
+                        rMap['GroupNm'] ??
+                        rMap['GroupName'] ??
+                        rMap['group_name'])
+                    ?.toString();
+            final rawCtReal = rMap['CtRealId']?.toString();
+            final isGrpFlag =
+                rMap['IsGrp'] == 1 ||
+                rMap['IsGrp'] == true ||
+                rMap['IsGroup'] == 1 ||
+                rMap['IsGroup'] == true;
 
-        final isGrp = chat.isGroup ||
-            isGrpFlag ||
-            (rawGrpId != null && rawGrpId.isNotEmpty && rawGrpId != '0') ||
-            (rawGrpNm != null && rawGrpNm.isNotEmpty && rawGrpNm != 'null') ||
-            (rawCtReal != null && rawCtReal.startsWith('-'));
+            final isGrp =
+                chat.isGroup ||
+                isGrpFlag ||
+                (rawGrpId != null && rawGrpId.isNotEmpty && rawGrpId != '0') ||
+                (rawGrpNm != null &&
+                    rawGrpNm.isNotEmpty &&
+                    rawGrpNm != 'null') ||
+                (rawCtReal != null && rawCtReal.startsWith('-'));
 
-        final resolvedGrpId = (rawGrpId != null && rawGrpId.isNotEmpty && rawGrpId != '0')
-            ? rawGrpId
-            : ((rawCtReal != null && rawCtReal.startsWith('-'))
-                ? rawCtReal
-                : chat.groupId);
+            final resolvedGrpId =
+                (rawGrpId != null && rawGrpId.isNotEmpty && rawGrpId != '0')
+                ? rawGrpId
+                : ((rawCtReal != null && rawCtReal.startsWith('-'))
+                      ? rawCtReal
+                      : chat.groupId);
 
-        // FIX: Update data kontak (nama & foto profil) dari respons DetailRoom
-        // agar header, avatar, dan Chat List ikut sinkron tanpa keluar-masuk halaman.
-        final contactMap = (d['ContactReal'] is Map)
-            ? Map<String, dynamic>.from(d['ContactReal'] as Map)
-            : (d['Contact'] is Map)
+            // FIX: Update data kontak (nama & foto profil) dari respons DetailRoom
+            // agar header, avatar, dan Chat List ikut sinkron tanpa keluar-masuk halaman.
+            final contactMap = (d['ContactReal'] is Map)
+                ? Map<String, dynamic>.from(d['ContactReal'] as Map)
+                : (d['Contact'] is Map)
                 ? Map<String, dynamic>.from(d['Contact'] as Map)
                 : <String, dynamic>{};
-        final newSender = (rMap['CtRealNm']?.toString() ??
-                rMap['CtNm']?.toString() ??
-                d['CtRealNm']?.toString() ??
-                contactMap['Name']?.toString() ??
-                contactMap['Nm']?.toString())
-            ?.trim();
-        final rawAvatar = contactMap['Photo']?.toString() ??
-            rMap['CtImg']?.toString() ??
-            rMap['LinkImg']?.toString() ??
-            d['Photo']?.toString();
-        String? newAvatar;
-        if (rawAvatar != null && rawAvatar.isNotEmpty && rawAvatar != 'null') {
-          newAvatar = rawAvatar.startsWith('http')
-              ? rawAvatar
-              : 'https://id.nobox.ai/upload/${rawAvatar.replaceAll('\\', '/')}';
-        }
+            final newSender =
+                (rMap['CtRealNm']?.toString() ??
+                        rMap['CtNm']?.toString() ??
+                        d['CtRealNm']?.toString() ??
+                        contactMap['Name']?.toString() ??
+                        contactMap['Nm']?.toString())
+                    ?.trim();
+            final rawAvatar =
+                contactMap['Photo']?.toString() ??
+                rMap['CtImg']?.toString() ??
+                rMap['LinkImg']?.toString() ??
+                d['Photo']?.toString();
+            String? newAvatar;
+            if (rawAvatar != null &&
+                rawAvatar.isNotEmpty &&
+                rawAvatar != 'null') {
+              newAvatar = rawAvatar.startsWith('http')
+                  ? rawAvatar
+                  : 'https://id.nobox.ai/upload/${rawAvatar.replaceAll('\\', '/')}';
+            }
 
-        setState(() {
-          chat = chat.copyWith(
-            accountId: (chAccId != null && chAccId.isNotEmpty && chAccId != '0') ? chAccId : chat.accountId,
-            channelName: (chAccNm != null && chAccNm.isNotEmpty && chAccNm != 'Not Found') ? chAccNm : chat.channelName,
-            contactId: isGrp ? '' : ((linkId != null && linkId.isNotEmpty && linkId != '0') ? linkId : chat.contactId),
-            link: (linkId != null && linkId.isNotEmpty && linkId != '0') ? linkId : chat.link,
-            extId: isGrp ? '' : ((extId != null && extId.isNotEmpty) ? extId : chat.extId),
-            isGroup: isGrp,
-            groupId: (resolvedGrpId != null && resolvedGrpId.isNotEmpty && resolvedGrpId != '0') ? resolvedGrpId : chat.groupId,
-            groupName: (rawGrpNm != null && rawGrpNm.isNotEmpty && rawGrpNm != 'null') ? rawGrpNm : chat.groupName,
-            sender: (newSender != null && newSender.isNotEmpty && newSender != 'null') ? newSender : chat.sender,
-            avatarUrl: (newAvatar != null && newAvatar.isNotEmpty) ? newAvatar : chat.avatarUrl,
-          );
-        });
+            setState(() {
+              chat = chat.copyWith(
+                accountId:
+                    (chAccId != null && chAccId.isNotEmpty && chAccId != '0')
+                    ? chAccId
+                    : chat.accountId,
+                channelName:
+                    (chAccNm != null &&
+                        chAccNm.isNotEmpty &&
+                        chAccNm != 'Not Found')
+                    ? chAccNm
+                    : chat.channelName,
+                contactId: isGrp
+                    ? ''
+                    : ((linkId != null && linkId.isNotEmpty && linkId != '0')
+                          ? linkId
+                          : chat.contactId),
+                link: (linkId != null && linkId.isNotEmpty && linkId != '0')
+                    ? linkId
+                    : chat.link,
+                extId: isGrp
+                    ? ''
+                    : ((extId != null && extId.isNotEmpty)
+                          ? extId
+                          : chat.extId),
+                isGroup: isGrp,
+                groupId:
+                    (resolvedGrpId != null &&
+                        resolvedGrpId.isNotEmpty &&
+                        resolvedGrpId != '0')
+                    ? resolvedGrpId
+                    : chat.groupId,
+                groupName:
+                    (rawGrpNm != null &&
+                        rawGrpNm.isNotEmpty &&
+                        rawGrpNm != 'null')
+                    ? rawGrpNm
+                    : chat.groupName,
+                sender:
+                    (newSender != null &&
+                        newSender.isNotEmpty &&
+                        newSender != 'null')
+                    ? newSender
+                    : chat.sender,
+                avatarUrl: (newAvatar != null && newAvatar.isNotEmpty)
+                    ? newAvatar
+                    : chat.avatarUrl,
+              );
+            });
 
-        // Update nama & avatar ke ChatProvider agar daftar chat & header ikut sinkron.
-        final chatProvForDetail = _chatProvider;
-        if (chatProvForDetail != null) {
-          final provIdx = chatProvForDetail.allChats.indexWhere((c) => c.id == chat.id);
-          if (provIdx != -1) {
-            final providerChat = chatProvForDetail.allChats[provIdx];
-            chatProvForDetail.updateLocalChat(providerChat.copyWith(
-              sender: chat.sender.isEmpty ? providerChat.sender : chat.sender,
-              avatarUrl: chat.avatarUrl ?? providerChat.avatarUrl,
-            ));
-          }
-        }
+            // Update nama & avatar ke ChatProvider agar daftar chat & header ikut sinkron.
+            final chatProvForDetail = _chatProvider;
+            if (chatProvForDetail != null) {
+              final provIdx = chatProvForDetail.allChats.indexWhere(
+                (c) => c.id == chat.id,
+              );
+              if (provIdx != -1) {
+                final providerChat = chatProvForDetail.allChats[provIdx];
+                chatProvForDetail.updateLocalChat(
+                  providerChat.copyWith(
+                    sender: chat.sender.isEmpty
+                        ? providerChat.sender
+                        : chat.sender,
+                    avatarUrl: chat.avatarUrl ?? providerChat.avatarUrl,
+                  ),
+                );
+              }
+            }
 
-        debugPrint('ChatDetail: ✅ Refreshed room details: ChAccId=$chAccId, isGroup=$isGrp, GrpId=${chat.groupId}, GrpNm=${chat.groupName}');
-      }).catchError((e) {
-        debugPrint('ChatDetail: ⚠️ Background getDetailRoom error: $e');
-      });
+            debugPrint(
+              'ChatDetail: ✅ Refreshed room details: ChAccId=$chAccId, isGroup=$isGrp, GrpId=${chat.groupId}, GrpNm=${chat.groupName}',
+            );
+          })
+          .catchError((e) {
+            debugPrint('ChatDetail: ⚠️ Background getDetailRoom error: $e');
+          });
       // Polling dimulai setelah _loadInitialMessages selesai (di dalam fungsinya)
       // _fetchQuickReplies hanya dipanggil saat user mengetik '/' (lazy)
     });
@@ -3378,7 +3741,8 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   void _sendMessage() async {
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
     final isArchived = chat.isArchived || chatProvider.isRoomArchived(chat.id);
-    if (_isSending || isArchived) return; // Mencegah pengiriman ganda atau pada chat terarsip
+    if (_isSending || isArchived)
+      return; // Mencegah pengiriman ganda atau pada chat terarsip
 
     final content = _messageController.text.trim();
     if (content.isEmpty) return;
@@ -3432,16 +3796,20 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     String? finalReplyType;
 
     if (targetReplyMsg != null) {
-      if (chat.chId == '2' || chat.channelType.toLowerCase().contains('telegram') || chat.channelName.toLowerCase().contains('telegram')) {
+      if (chat.chId == '2' ||
+          chat.channelType.toLowerCase().contains('telegram') ||
+          chat.channelName.toLowerCase().contains('telegram')) {
         // TELEGRAM: Backend NoBox kemungkinan besar membutuhkan ID internal (Primary Key) untuk meresolve balasan Telegram
         finalReplyId = targetReplyMsg.id;
       } else {
         // WHATSAPP & LAINNYA: Prioritaskan idAlias (ID asli dari channel eksternal)
-        finalReplyId = (targetReplyMsg.idAlias != null && targetReplyMsg.idAlias!.isNotEmpty)
+        finalReplyId =
+            (targetReplyMsg.idAlias != null &&
+                targetReplyMsg.idAlias!.isNotEmpty)
             ? targetReplyMsg.idAlias
             : targetReplyMsg.id;
       }
-      
+
       finalReplyMsg = targetReplyMsg.content;
       finalReplyFrom = targetReplyMsg.fromId;
       if (finalReplyFrom == null || finalReplyFrom.isEmpty) {
@@ -3471,19 +3839,28 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         'ChatDetail: ⚠️ SignalR send failed ($errorMsg), attempting fallback via REST API Inbox/Send...',
       );
       try {
-        final isGroupChat = chat.isGroup ||
-            (chat.groupId.isNotEmpty && chat.groupId != '0' && chat.groupId != 'null') ||
-            (chat.groupName.isNotEmpty && chat.groupName != '0' && chat.groupName != 'null') ||
-            (isTelegram && (chat.groupId.startsWith('-') || chat.ctRealId.startsWith('-') || chat.link.startsWith('-') || chat.id.startsWith('-')));
+        final isGroupChat =
+            chat.isGroup ||
+            (chat.groupId.isNotEmpty &&
+                chat.groupId != '0' &&
+                chat.groupId != 'null') ||
+            (chat.groupName.isNotEmpty &&
+                chat.groupName != '0' &&
+                chat.groupName != 'null') ||
+            (isTelegram &&
+                (chat.groupId.startsWith('-') ||
+                    chat.ctRealId.startsWith('-') ||
+                    chat.link.startsWith('-') ||
+                    chat.id.startsWith('-')));
 
         final resolvedGroupId = isGroupChat
             ? (chat.groupId.isNotEmpty && chat.groupId != '0'
-                ? chat.groupId
-                : (isTelegram && chat.ctRealId.startsWith('-')
-                    ? chat.ctRealId
-                    : (isTelegram && chat.link.startsWith('-')
-                        ? chat.link
-                        : (chat.id.startsWith('-') ? chat.id : null))))
+                  ? chat.groupId
+                  : (isTelegram && chat.ctRealId.startsWith('-')
+                        ? chat.ctRealId
+                        : (isTelegram && chat.link.startsWith('-')
+                              ? chat.link
+                              : (chat.id.startsWith('-') ? chat.id : null))))
             : null;
 
         final resp = await _chatService.sendMessage(
@@ -3493,14 +3870,17 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 : (chat.ctRealId.isNotEmpty ? chat.ctRealId : chat.contactId),
             content: finalContent,
             accountId: _getResolvedAccountId(chatProvider),
-            contactId: isGroupChat ? null : (chat.contactId.isNotEmpty ? chat.contactId : chat.link),
+            contactId: isGroupChat
+                ? null
+                : (chat.contactId.isNotEmpty ? chat.contactId : chat.link),
             extId: isGroupChat
                 ? null
                 : (chat.extId.isNotEmpty
-                    ? chat.extId
-                    : (chat.sender.replaceAll(RegExp(r'[^0-9]'), '').length >= 9
-                        ? chat.sender
-                        : null)),
+                      ? chat.extId
+                      : (chat.sender.replaceAll(RegExp(r'[^0-9]'), '').length >=
+                                9
+                            ? chat.sender
+                            : null)),
             channelId: chat.chId,
             groupId: resolvedGroupId,
           ),
@@ -3666,9 +4046,19 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       pickedFile.path,
       accountId: _getResolvedAccountId(chatProvider),
       channelId: _isTelegramChat ? '2' : chat.chId,
-      contactId: (chat.isGroup || (_isTelegramChat && (chat.groupId.startsWith('-') || chat.ctRealId.startsWith('-')))) ? null : chat.contactId,
+      contactId:
+          (chat.isGroup ||
+              (_isTelegramChat &&
+                  (chat.groupId.startsWith('-') ||
+                      chat.ctRealId.startsWith('-'))))
+          ? null
+          : chat.contactId,
       link: chat.link,
-      groupId: chat.groupId.isNotEmpty && chat.groupId != '0' ? chat.groupId : (_isTelegramChat && chat.ctRealId.startsWith('-') ? chat.ctRealId : null),
+      groupId: chat.groupId.isNotEmpty && chat.groupId != '0'
+          ? chat.groupId
+          : (_isTelegramChat && chat.ctRealId.startsWith('-')
+                ? chat.ctRealId
+                : null),
     );
 
     if (mounted && messageIndex < _messages.length) {
@@ -3760,14 +4150,17 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         nLower.endsWith('.mp4') ||
         nLower.endsWith('.mov');
 
-    final isTgsSticker =
-        pLower.endsWith('.tgs') ||
-        nLower.endsWith('.tgs');
+    final isTgsSticker = pLower.endsWith('.tgs') || nLower.endsWith('.tgs');
 
     // Static stickers: .webp, .png, .gif (non-animated)
-    final isStaticSticker = isStickerFile && !isAnimatedVideoSticker && !isTgsSticker;
+    final isStaticSticker =
+        isStickerFile && !isAnimatedVideoSticker && !isTgsSticker;
 
-    final displayContent = isAnimatedVideoSticker ? '🎬 Sticker' : (isTgsSticker ? '🎬 Sticker' : (isStickerFile ? '🌟 Sticker' : '🎬 Video'));
+    final displayContent = isAnimatedVideoSticker
+        ? '🎬 Sticker'
+        : (isTgsSticker
+              ? '🎬 Sticker'
+              : (isStickerFile ? '🌟 Sticker' : '🎬 Video'));
 
     final newMessage = Message(
       content: displayContent,
@@ -3789,7 +4182,12 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     });
 
     _scrollToBottom();
-    chatProvider.updateLocalLastMessage(chat.id, displayContent, lastMessageType: isStickerFile ? '16' : '4', isFromMe: true);
+    chatProvider.updateLocalLastMessage(
+      chat.id,
+      displayContent,
+      lastMessageType: isStickerFile ? '16' : '4',
+      isFromMe: true,
+    );
 
     final messageIndex = _messages.indexOf(newMessage);
 
@@ -3798,9 +4196,19 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       pickedFile.path,
       accountId: _getResolvedAccountId(chatProvider),
       channelId: _isTelegramChat ? '2' : chat.chId,
-      contactId: (chat.isGroup || (_isTelegramChat && (chat.groupId.startsWith('-') || chat.ctRealId.startsWith('-')))) ? null : chat.contactId,
+      contactId:
+          (chat.isGroup ||
+              (_isTelegramChat &&
+                  (chat.groupId.startsWith('-') ||
+                      chat.ctRealId.startsWith('-'))))
+          ? null
+          : chat.contactId,
       link: chat.link,
-      groupId: chat.groupId.isNotEmpty && chat.groupId != '0' ? chat.groupId : (_isTelegramChat && chat.ctRealId.startsWith('-') ? chat.ctRealId : null),
+      groupId: chat.groupId.isNotEmpty && chat.groupId != '0'
+          ? chat.groupId
+          : (_isTelegramChat && chat.ctRealId.startsWith('-')
+                ? chat.ctRealId
+                : null),
     );
 
     if (mounted && messageIndex < _messages.length) {
@@ -3927,23 +4335,24 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         accounts != null &&
         accounts.isNotEmpty) {
       try {
-        final activeAcc = accounts.where(
-          (acc) {
-            final status = acc['Status']?.toString();
-            final condition = acc['Condition']?.toString();
-            final note = (acc['NoteCondition']?.toString() ?? '').toLowerCase();
-            final isConnected = (status == '1' || status == 'true') &&
-                (condition == '1' || condition == 'true' || note.contains('connect'));
-            if (!isConnected) return false;
+        final activeAcc = accounts.where((acc) {
+          final status = acc['Status']?.toString();
+          final condition = acc['Condition']?.toString();
+          final note = (acc['NoteCondition']?.toString() ?? '').toLowerCase();
+          final isConnected =
+              (status == '1' || status == 'true') &&
+              (condition == '1' ||
+                  condition == 'true' ||
+                  note.contains('connect'));
+          if (!isConnected) return false;
 
-            final ch = acc['Channel']?.toString();
-            final code = (acc['Code']?.toString() ?? '').toLowerCase();
-            if (isTelegram) {
-              return ch == '2' || code.contains('telegram');
-            }
-            return ch == '1' || code.contains('whatsapp');
-          },
-        ).firstOrNull;
+          final ch = acc['Channel']?.toString();
+          final code = (acc['Code']?.toString() ?? '').toLowerCase();
+          if (isTelegram) {
+            return ch == '2' || code.contains('telegram');
+          }
+          return ch == '1' || code.contains('whatsapp');
+        }).firstOrNull;
         if (activeAcc != null && activeAcc['Id'] != null) {
           resolvedAccountId = activeAcc['Id'].toString();
         }
@@ -4030,7 +4439,11 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       });
 
       _scrollToBottom();
-      chatProvider.updateLocalLastMessage(chat.id, '📄 ${file.name}', isFromMe: true);
+      chatProvider.updateLocalLastMessage(
+        chat.id,
+        '📄 ${file.name}',
+        isFromMe: true,
+      );
 
       final messageIndex = _messages.indexOf(newMessage);
 
@@ -4039,9 +4452,19 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         file.path!,
         accountId: _getResolvedAccountId(chatProvider),
         channelId: _isTelegramChat ? '2' : chat.chId,
-        contactId: (chat.isGroup || (_isTelegramChat && (chat.groupId.startsWith('-') || chat.ctRealId.startsWith('-')))) ? null : chat.contactId,
+        contactId:
+            (chat.isGroup ||
+                (_isTelegramChat &&
+                    (chat.groupId.startsWith('-') ||
+                        chat.ctRealId.startsWith('-'))))
+            ? null
+            : chat.contactId,
         link: chat.link,
-        groupId: chat.groupId.isNotEmpty && chat.groupId != '0' ? chat.groupId : (_isTelegramChat && chat.ctRealId.startsWith('-') ? chat.ctRealId : null),
+        groupId: chat.groupId.isNotEmpty && chat.groupId != '0'
+            ? chat.groupId
+            : (_isTelegramChat && chat.ctRealId.startsWith('-')
+                  ? chat.ctRealId
+                  : null),
         forceDocument: true,
       );
 
@@ -4169,7 +4592,11 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         Provider.of<ChatProvider>(
           context,
           listen: false,
-        ).updateLocalLastMessage(chat.id, '📍 Lokasi saya\n$mapsUrl', isFromMe: true);
+        ).updateLocalLastMessage(
+          chat.id,
+          '📍 Lokasi saya\n$mapsUrl',
+          isFromMe: true,
+        );
       }
     } else if (mounted && messageIndex < _messages.length) {
       setState(() {
@@ -4249,9 +4676,19 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         Provider.of<ChatProvider>(context, listen: false),
       ),
       channelId: _isTelegramChat ? '2' : chat.chId,
-      contactId: (chat.isGroup || (_isTelegramChat && (chat.groupId.startsWith('-') || chat.ctRealId.startsWith('-')))) ? null : chat.contactId,
+      contactId:
+          (chat.isGroup ||
+              (_isTelegramChat &&
+                  (chat.groupId.startsWith('-') ||
+                      chat.ctRealId.startsWith('-'))))
+          ? null
+          : chat.contactId,
       link: chat.link,
-      groupId: chat.groupId.isNotEmpty && chat.groupId != '0' ? chat.groupId : (_isTelegramChat && chat.ctRealId.startsWith('-') ? chat.ctRealId : null),
+      groupId: chat.groupId.isNotEmpty && chat.groupId != '0'
+          ? chat.groupId
+          : (_isTelegramChat && chat.ctRealId.startsWith('-')
+                ? chat.ctRealId
+                : null),
     );
 
     if (!response.isError) {
@@ -4430,9 +4867,19 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         path,
         accountId: _getResolvedAccountId(chatProvider),
         channelId: _isTelegramChat ? '2' : chat.chId,
-        contactId: (chat.isGroup || (_isTelegramChat && (chat.groupId.startsWith('-') || chat.ctRealId.startsWith('-')))) ? null : chat.contactId,
+        contactId:
+            (chat.isGroup ||
+                (_isTelegramChat &&
+                    (chat.groupId.startsWith('-') ||
+                        chat.ctRealId.startsWith('-'))))
+            ? null
+            : chat.contactId,
         link: chat.link,
-        groupId: chat.groupId.isNotEmpty && chat.groupId != '0' ? chat.groupId : (_isTelegramChat && chat.ctRealId.startsWith('-') ? chat.ctRealId : null),
+        groupId: chat.groupId.isNotEmpty && chat.groupId != '0'
+            ? chat.groupId
+            : (_isTelegramChat && chat.ctRealId.startsWith('-')
+                  ? chat.ctRealId
+                  : null),
       );
 
       if (!response.isError) {
@@ -4649,7 +5096,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     // FIX: Sinkronkan seluruh data kontak (nama, avatar, tags, funnel, deal, campaign,
     // agent, needReply) dari ChatProvider agar perubahan dari Edit Contact/Contact Info
     // maupun server/SignalR langsung ter-refleks di header & AppBar tanpa keluar-masuk halaman.
-    final ChatModel? currentChat = context.select<ChatProvider, ChatModel?>((p) {
+    final ChatModel? currentChat = context.select<ChatProvider, ChatModel?>((
+      p,
+    ) {
       try {
         return p.allChats.firstWhere((c) => c.id == chat.id);
       } catch (_) {
@@ -4691,106 +5140,108 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       },
       child: GestureDetector(
         onTap: () {
-        FocusScope.of(context).unfocus();
-        if (_showEmojiPicker || _showAttachmentPanel || _isShowingQuickReply) {
-          setState(() {
-            _showEmojiPicker = false;
-            _showAttachmentPanel = false;
-            _isShowingQuickReply = false;
-          });
-        }
-      },
-      behavior: HitTestBehavior.translucent,
-      child: Scaffold(
-        appBar: _isSelectionMode
-            ? _buildSelectionAppBar(isDark)
-            : _buildAppBar(isDark),
-        body: Consumer<ChatSettingsProvider>(
-          builder: (context, settings, _) {
-            return Container(
-              decoration: BoxDecoration(
-                color: settings.backgroundImagePath == null
-                    ? (settings.backgroundColor ??
-                          (isDark
-                              ? const Color(0xFF0B141A)
-                              : const Color(0xFFF0F2F5)))
-                    : null,
-                image: settings.backgroundImagePath != null
-                    ? DecorationImage(
-                        image: FileImage(File(settings.backgroundImagePath!)),
-                        fit: BoxFit.cover,
-                        colorFilter: isDark
-                            ? ColorFilter.mode(
-                                Colors.black.withOpacity(0.4),
-                                BlendMode.darken,
-                              )
-                            : null,
-                      )
-                    : null,
-              ),
-              child: Column(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        FocusScope.of(context).unfocus();
-                        if (_showEmojiPicker ||
-                            _showAttachmentPanel ||
-                            _isShowingQuickReply) {
-                          setState(() {
-                            _showEmojiPicker = false;
-                            _showAttachmentPanel = false;
-                            _isShowingQuickReply = false;
-                          });
-                        }
-                      },
-                      behavior: HitTestBehavior.translucent,
-                      child: Stack(
+          FocusScope.of(context).unfocus();
+          if (_showEmojiPicker ||
+              _showAttachmentPanel ||
+              _isShowingQuickReply) {
+            setState(() {
+              _showEmojiPicker = false;
+              _showAttachmentPanel = false;
+              _isShowingQuickReply = false;
+            });
+          }
+        },
+        behavior: HitTestBehavior.translucent,
+        child: Scaffold(
+          appBar: _isSelectionMode
+              ? _buildSelectionAppBar(isDark)
+              : _buildAppBar(isDark),
+          body: Consumer<ChatSettingsProvider>(
+            builder: (context, settings, _) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: settings.backgroundImagePath == null
+                      ? (settings.backgroundColor ??
+                            (isDark
+                                ? const Color(0xFF0B141A)
+                                : const Color(0xFFF0F2F5)))
+                      : null,
+                  image: settings.backgroundImagePath != null
+                      ? DecorationImage(
+                          image: FileImage(File(settings.backgroundImagePath!)),
+                          fit: BoxFit.cover,
+                          colorFilter: isDark
+                              ? ColorFilter.mode(
+                                  Colors.black.withOpacity(0.4),
+                                  BlendMode.darken,
+                                )
+                              : null,
+                        )
+                      : null,
+                ),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          FocusScope.of(context).unfocus();
+                          if (_showEmojiPicker ||
+                              _showAttachmentPanel ||
+                              _isShowingQuickReply) {
+                            setState(() {
+                              _showEmojiPicker = false;
+                              _showAttachmentPanel = false;
+                              _isShowingQuickReply = false;
+                            });
+                          }
+                        },
+                        behavior: HitTestBehavior.translucent,
+                        child: Stack(
+                          children: [
+                            _buildMessageList(isDark),
+                            // Tombol scroll-to-bottom dihilangkan
+                            // if (_showScrollToBottomButton)
+                            //   Positioned(
+                            //     right: 16,
+                            //     bottom: 12,
+                            //     child: _buildScrollToBottomButton(isDark),
+                            //   ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SafeArea(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          _buildMessageList(isDark),
-                          // Tombol scroll-to-bottom dihilangkan
-                          // if (_showScrollToBottomButton)
-                          //   Positioned(
-                          //     right: 16,
-                          //     bottom: 12,
-                          //     child: _buildScrollToBottomButton(isDark),
-                          //   ),
+                          if (chat.isArchived || isChatArchived)
+                            _buildArchivedBanner(isDark)
+                          else if (!widget.isReadOnly) ...[
+                            if (chat.isBlocked ||
+                                chat.status.toLowerCase() == 'resolved')
+                              const SizedBox.shrink()
+                            else ...[
+                              // state `_isShowingQuickReply` akan aktif dan memunculkan *overlay list* berisi template yang sudah di-cache.
+                              if (_isShowingQuickReply &&
+                                  _quickReplyTemplates.isNotEmpty)
+                                _buildQuickReplyList(isDark),
+                              if (_repliedMessage != null)
+                                _buildReplyPreview(isDark),
+                              _buildInputBar(isDark),
+                              if (_showAttachmentPanel)
+                                _buildAttachmentPanel(isDark),
+                              if (_showEmojiPicker) _buildEmojiPicker(isDark),
+                            ],
+                          ],
                         ],
                       ),
                     ),
-                  ),
-                  SafeArea(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (chat.isArchived || isChatArchived)
-                          _buildArchivedBanner(isDark)
-                        else if (!widget.isReadOnly) ...[
-                          if (chat.isBlocked ||
-                              chat.status.toLowerCase() == 'resolved')
-                            const SizedBox.shrink()
-                          else ...[
-                            // state `_isShowingQuickReply` akan aktif dan memunculkan *overlay list* berisi template yang sudah di-cache.
-                            if (_isShowingQuickReply &&
-                                _quickReplyTemplates.isNotEmpty)
-                              _buildQuickReplyList(isDark),
-                            if (_repliedMessage != null)
-                              _buildReplyPreview(isDark),
-                            _buildInputBar(isDark),
-                            if (_showAttachmentPanel)
-                              _buildAttachmentPanel(isDark),
-                            if (_showEmojiPicker) _buildEmojiPicker(isDark),
-                          ],
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
+                  ],
+                ),
+              );
+            },
+          ),
         ),
-      ),
       ),
     );
   }
@@ -4869,7 +5320,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                         color: AppTheme.primaryColor,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                          color: isDark
+                              ? const Color(0xFF1E293B)
+                              : Colors.white,
                           width: 1.5,
                         ),
                       ),
@@ -5556,9 +6009,11 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   // =====================================================================
   PreferredSizeWidget _buildSelectionAppBar(bool isDark) {
     return AppBar(
-      backgroundColor: isDark ? AppTheme.darkSurface : const Color(
-        0xFF1976D2,
-      ), // Biru tua standar seperti di gambar referensi
+      backgroundColor: isDark
+          ? AppTheme.darkSurface
+          : const Color(
+              0xFF1976D2,
+            ), // Biru tua standar seperti di gambar referensi
       surfaceTintColor: Colors.transparent,
       iconTheme: const IconThemeData(color: Colors.white),
       leading: IconButton(
@@ -5689,7 +6144,10 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                       });
 
                       // Sinkronkan data pesan yang dihapus ke ChatProvider SECARA INSTAN
-                      final chatProv = Provider.of<ChatProvider>(context, listen: false);
+                      final chatProv = Provider.of<ChatProvider>(
+                        context,
+                        listen: false,
+                      );
                       for (var m in selectedMsgs) {
                         chatProv.recordDeletedMessage(
                           chat.id,
@@ -5877,9 +6335,17 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     setState(() {
       chat = chat.copyWith(status: 'Resolved', agentName: currentAgentName);
     });
-    chatProvider.updateChatStatus(chat.id, 'Resolved', agentName: currentAgentName);
+    chatProvider.updateChatStatus(
+      chat.id,
+      'Resolved',
+      agentName: currentAgentName,
+    );
     if (resolveId != chat.id) {
-      chatProvider.updateChatStatus(resolveId, 'Resolved', agentName: currentAgentName);
+      chatProvider.updateChatStatus(
+        resolveId,
+        'Resolved',
+        agentName: currentAgentName,
+      );
     }
 
     try {
@@ -5938,11 +6404,16 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   }
 
   List<Message> get _displayMessages {
-    final currentHash = (_messages.length * 31 + _messages.fold<int>(0, (h, m) => h + m.hashCode)) as int;
+    final currentHash =
+        (_messages.length * 31 +
+                _messages.fold<int>(0, (h, m) => h + m.hashCode))
+            as int;
     if (_cachedDisplayMessages != null && _cachedMessagesHash == currentHash) {
       return _cachedDisplayMessages!;
     }
-    _cachedDisplayMessages = _messages.where((m) => !m.isSystemMessage).toList();
+    _cachedDisplayMessages = _messages
+        .where((m) => !m.isSystemMessage)
+        .toList();
     _cachedMessagesHash = currentHash;
     return _cachedDisplayMessages!;
   }
@@ -6040,9 +6511,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
           // Last index (top of screen): loading indicator or "No more messages"
           if (adjustedIndex == displayMessages.length) {
-            return RepaintBoundary(
-              child: _buildMessageListHeader(),
-            );
+            return RepaintBoundary(child: _buildMessageListHeader());
           }
 
           // Map reversed index to message index (newest = index 0, oldest = last)
@@ -6074,13 +6543,14 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           final msgKey = _getMessageKey(message);
           final isSelected = _selectedMessageKeys.contains(msgKey);
 
-          final isFirstUnread = (_firstUnreadMessageId != null &&
+          final isFirstUnread =
+              (_firstUnreadMessageId != null &&
                   _firstUnreadMessageId!.isNotEmpty)
               ? (message.id == _firstUnreadMessageId ||
-                  (message.idAlias != null &&
-                      message.idAlias == _firstUnreadMessageId))
+                    (message.idAlias != null &&
+                        message.idAlias == _firstUnreadMessageId))
               : (_firstUnreadDisplayIndex != null &&
-                  displayIndex == _firstUnreadDisplayIndex);
+                    displayIndex == _firstUnreadDisplayIndex);
 
           final actualUnread = _actualUnreadCount;
 
@@ -6351,7 +6821,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 Icon(
                   Icons.mark_email_unread_rounded,
                   size: 14,
-                  color: isDark ? Colors.blue.shade300 : const Color(0xFF2563EB),
+                  color: isDark
+                      ? Colors.blue.shade300
+                      : const Color(0xFF2563EB),
                 ),
                 const SizedBox(width: 6),
                 Text(
@@ -6658,18 +7130,23 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                                 fileJson: attachmentStr,
                               );
                           bool isError = (sendError != null);
-                          String errorMessage = sendError ?? 'SignalR delivery failed';
+                          String errorMessage =
+                              sendError ?? 'SignalR delivery failed';
 
                           if (!isError) {
                             String displayContent = finalContent;
                             if (message.messageType == MessageType.image) {
                               displayContent = '📷 Photo';
-                            } else if (message.messageType == MessageType.video) {
+                            } else if (message.messageType ==
+                                MessageType.video) {
                               displayContent = '🎥 Video';
-                            } else if (message.messageType == MessageType.voice) {
+                            } else if (message.messageType ==
+                                MessageType.voice) {
                               displayContent = '🎤 Pesan Suara';
-                            } else if (message.messageType == MessageType.document) {
-                              displayContent = '📄 ${message.documentName ?? 'Dokumen'}';
+                            } else if (message.messageType ==
+                                MessageType.document) {
+                              displayContent =
+                                  '📄 ${message.documentName ?? 'Dokumen'}';
                             }
                             chatProvider.updateLocalLastMessage(
                               target.id,
@@ -6819,25 +7296,34 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                             int lastType = 1;
                             if (lastMsg.messageType == MessageType.voice) {
                               lastType = 2;
-                            } else if (lastMsg.messageType == MessageType.image) {
+                            } else if (lastMsg.messageType ==
+                                MessageType.image) {
                               lastType = 3;
-                            } else if (lastMsg.messageType == MessageType.video) {
+                            } else if (lastMsg.messageType ==
+                                MessageType.video) {
                               lastType = 4;
-                            } else if (lastMsg.messageType == MessageType.document) {
+                            } else if (lastMsg.messageType ==
+                                MessageType.document) {
                               lastType = 5;
                             }
 
-                            String displayContent = (lastMsg.messageType != MessageType.text && lastMsg.content == '📷 Photo')
+                            String displayContent =
+                                (lastMsg.messageType != MessageType.text &&
+                                    lastMsg.content == '📷 Photo')
                                 ? ''
                                 : lastMsg.content;
                             if (lastMsg.messageType == MessageType.image) {
                               displayContent = '📷 Photo';
-                            } else if (lastMsg.messageType == MessageType.video) {
+                            } else if (lastMsg.messageType ==
+                                MessageType.video) {
                               displayContent = '🎥 Video';
-                            } else if (lastMsg.messageType == MessageType.voice) {
+                            } else if (lastMsg.messageType ==
+                                MessageType.voice) {
                               displayContent = '🎤 Pesan Suara';
-                            } else if (lastMsg.messageType == MessageType.document) {
-                              displayContent = '📄 ${lastMsg.documentName ?? 'Dokumen'}';
+                            } else if (lastMsg.messageType ==
+                                MessageType.document) {
+                              displayContent =
+                                  '📄 ${lastMsg.documentName ?? 'Dokumen'}';
                             }
 
                             chatProvider.updateLocalLastMessage(
@@ -7645,7 +8131,10 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             customBottomActionBar: (config, state, showSearchView) {
               return Container(
                 color: isDark ? AppTheme.darkSurface : Colors.blue,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [

@@ -583,6 +583,12 @@ class _ChatListPageState extends State<ChatListPage>
                   padding: const EdgeInsets.only(bottom: 2.0),
                   child: TabBar(
                     controller: _tabController,
+                    // Ganti filter seketika saat jari menyentuh tab, tanpa perlu
+                    // menunggu animasi tab selesai (instan, 0ms delay).
+                    onTap: (index) {
+                      final newFilter = _tabs[index];
+                      context.read<ChatProvider>().setActiveFilter(newFilter);
+                    },
                     isScrollable: false,
                     labelPadding: EdgeInsets.zero,
                     indicator: const UnderlineTabIndicator(
@@ -913,7 +919,7 @@ class _ChatListPageState extends State<ChatListPage>
                 constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                 child: Center(
                   child: Text(
-                    unreadCount.toString(),
+                    unreadCount > 99 ? '99+' : unreadCount.toString(),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 10,
@@ -2981,7 +2987,9 @@ class _ChatListPageState extends State<ChatListPage>
                                   ),
                                   alignment: Alignment.center,
                                   child: Text(
-                                    chat.unreadCount.toString(),
+                                    chat.unreadCount > 99
+                                        ? '99+'
+                                        : chat.unreadCount.toString(),
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 10,

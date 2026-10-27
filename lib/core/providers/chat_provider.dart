@@ -19,6 +19,16 @@ import 'dart:async';
 class ChatProvider with ChangeNotifier {
   final ChatService _chatService = ChatService();
   List<ChatModel> _chats = [];
+  // Master list berisi SEMUA percakapan (semua status) yang terakhir berhasil
+  // di-load/fetch dari server saat tab aktif adalah 'All'. Dipakai sebagai
+  // sumber truth untuk filter lokal (All/Unassigned/Assigned/Resolved) agar
+  // perpindahan tab instan & badge tab tidak ikut hilang/terpotong.
+  List<ChatModel> _allMasterChats = [];
+
+  ChatProvider() {
+    // Muat persisted state HANYA SEKALI di awal; jangan diulang di fetchChats().
+    _loadPersistedState();
+  }
   bool _isLoading = false;
   String? _error;
   // Error khusus dari fetchChats() (memuat daftar percakapan).
@@ -31,6 +41,10 @@ class ChatProvider with ChangeNotifier {
   Timer? _saveReadDebounce;
   Timer? _savePinnedDebounce;
   Timer? _saveArchivedDebounce;
+
+  // Debounce pemanggilan server saat user berpindah-pindah tab filter dengan
+  // cepat. Memastikan server hanya di-hit sekali untuk tab terakhir yang dipilih.
+  Timer? _tabFetchDebounce;
 
   // ANR FIX: Batch notifyListeners to prevent UI freeze when multiple
   // SignalR events arrive rapidly (e.g., message burst).
@@ -46,7 +60,7 @@ class ChatProvider with ChangeNotifier {
   bool _isRefreshingFirstPage = false;
 
   // Pagination state
-  static const int _pageSize = 100;
+  static const int _pageSize = 25;
   int _currentSkip = 0;
   bool _isLoadingMore = false;
   bool _hasMore = true;
@@ -503,11 +517,44 @@ class ChatProvider with ChangeNotifier {
     _currentSkip = 0;
     _hasMore = true;
     // TIDAK kosongkan _chats di sini → list lama tetap tampil selama fetch
+
+    // INSTAN: filter lokal dari master list agar UI langsung ter-update tanpa
+    // menunggu response server (0ms delay). Ini juga mencegah badge tab lain
+    // menjadi 0 dan percakapan di tab 'All' tidak terpotong.
+    if (_allMasterChats.isNotEmpty) {
+      switch (filter) {
+        case 'All':
+          _chats = List.from(_allMasterChats);
+          break;
+        case 'Unassigned':
+          _chats = _allMasterChats
+              .where((c) => c.status == 'Unassigned')
+              .toList();
+          break;
+        case 'Assigned':
+          _chats = _allMasterChats
+              .where((c) => c.status == 'Assigned')
+              .toList();
+          break;
+        case 'Resolved':
+          _chats = _allMasterChats
+              .where((c) => c.status == 'Resolved')
+              .toList();
+          break;
+      }
+    }
+
     // Increment generation untuk cancel request lama secara implisit
     _fetchGeneration++;
     final currentGen = _fetchGeneration;
-    notifyListeners(); // Hanya update tab highlight
-    fetchChats(generation: currentGen); // Fetch di background dengan generation
+    notifyListeners(); // Update UI secara instan
+
+    // Debounce 400ms: jika user mengetuk tab berpindah-pindah cepat, server hanya
+    // dipanggil 1 kali untuk tab terakhir yang dipilih (mencegah request bertumpuk).
+    _tabFetchDebounce?.cancel();
+    _tabFetchDebounce = Timer(const Duration(milliseconds: 400), () {
+      fetchChats(generation: currentGen);
+    });
   }
 
   // FITUR: Filter Lanjutan
@@ -663,7 +710,12 @@ class ChatProvider with ChangeNotifier {
   Future<void> fetchChats({int? generation}) async {
     // Jika generation tidak disediakan, gunakan current (untuk backward compat)
     final gen = generation ?? _fetchGeneration;
-    _isLoading = true;
+    // Hanya tampilkan loading jika benar-benar belum ada data sama sekali.
+    // Jika data lokal sudah tersedia, lakukan silent background sync agar user
+    // tetap bisa langsung melihat isi chat tanpa layar kosong/skeleton loading.
+    if (_chats.isEmpty && _allMasterChats.isEmpty) {
+      _isLoading = true;
+    }
     _error = null;
     _fetchError = null;
     // Reset state pagination saat pengambilan data baru
@@ -673,13 +725,6 @@ class ChatProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // Muat state lokal yang tersimpan terlebih dahulu
-      await _loadPersistedState();
-      // Sinkronkan daftar arsip dari server secara asinkron tanpa memblokir
-      syncArchivedConversations().catchError((e) {
-        debugPrint('ChatProvider: silent syncArchivedConversations error: $e');
-      });
-
       // Pre-fetch semua reference data yang dibutuhkan untuk
       // client-side ID-to-name resolution (Jalur 2 filters).
       //
@@ -1167,70 +1212,15 @@ class ChatProvider with ChangeNotifier {
           '📄 [Pagination] Initial fetch: loaded ${response.data!.length} items, hasMore=$_hasMore',
         );
 
-        // Cek jika ada lastMessage berupa log sistem / placeholder atau pesan yang dihapus lokal
-        final prefs = await SharedPreferences.getInstance();
-        final invalidRooms = _chats
-            .where((c) {
-              final lower = c.lastMessage.toLowerCase();
-              final isSystemOrPlaceholder =
-                  c.lastMessage == 'Site.Inbox.DeletedMessage' ||
-                  lower.contains('site.inbox.') ||
-                  lower.contains('percakapan di-assign') ||
-                  lower.contains('percakapan diselesaikan') ||
-                  lower.contains('bot diaktifkan') ||
-                  lower.contains('pemberitahuan sistem');
-              if (isSystemOrPlaceholder) return true;
-
-              if (!_localOverrides.containsKey(c.id)) {
-                final delList = prefs.getStringList('deleted_ids_${c.id}');
-                if (delList != null && delList.isNotEmpty) {
-                  return true;
-                }
-              }
-              return false;
-            })
-            .map((c) => c.id)
-            .toList();
-        if (invalidRooms.isNotEmpty) {
-          _fetchRealLastMessagesForDeletedRooms(invalidRooms);
+        // PERF: Simpan master list saat fetch pada tab 'All' selesai, supaya
+        // filter lokal (setActiveFilter) instan dan tidak memotong data.
+        if (_activeFilter == 'All') {
+          _allMasterChats = List.from(_chats);
         }
 
         // Segera perbarui UI agar pengguna tidak menunggu lama
         _isLoading = false;
         notifyListeners();
-
-        // Ambil juga percakapan yang diarsipkan dari server dan gabungkan (di background)
-        try {
-          //getArchivedConversations() digunakan untuk memanggil API untuk menyelaraskan dengan databae sever
-          final archivedResponse = await _chatService
-              .getArchivedConversations();
-          if (!archivedResponse.isError && archivedResponse.data != null) {
-            bool hasNewArchived = false;
-            for (final archivedConv in archivedResponse.data!) {
-              final archivedChat = archivedConv.toChatModel();
-              if (!_archivedIds.contains(archivedChat.id)) {
-                _archivedIds.add(archivedChat.id);
-                hasNewArchived = true;
-              }
-              final idx = _chats.indexWhere((c) => c.id == archivedChat.id);
-              if (idx != -1) {
-                if (!_chats[idx].isArchived) {
-                  _chats[idx] = _chats[idx].copyWith(isArchived: true);
-                  hasNewArchived = true;
-                }
-              } else {
-                _chats.add(archivedChat.copyWith(isArchived: true));
-                hasNewArchived = true;
-              }
-            }
-            if (hasNewArchived) {
-              _saveArchivedState();
-              notifyListeners();
-            }
-          }
-        } catch (e) {
-          debugPrint('ChatProvider: Failed to fetch archived chats: $e');
-        }
       } else {
         // Guard: jika generation sudah berubah, abaikan error state
         if (gen != _fetchGeneration) return;
@@ -2705,6 +2695,12 @@ class ChatProvider with ChangeNotifier {
           debugPrint(
             '📄 [Pagination] Total chats now: ${_chats.length}, hasMore=$_hasMore',
           );
+
+          // PERF: Perbarui master list saat paging pada tab 'All' agar filter
+          // lokal selanjutnya tetap lengkap.
+          if (_activeFilter == 'All') {
+            _allMasterChats = List.from(_chats);
+          }
         }
       } else {
         // Guard: jika generation sudah berubah, abaikan error
@@ -2980,20 +2976,24 @@ class ChatProvider with ChangeNotifier {
       _chats.where((c) => !c.isArchived && c.status == 'Assigned').length;
   int get resolvedCount =>
       _chats.where((c) => !c.isArchived && c.status == 'Resolved').length;
-  int get totalUnreadCount => _chats
-      .where((c) => !c.isArchived)
-      .fold(0, (sum, c) => sum + c.unreadCount);
+  int get totalUnreadCount =>
+      (_allMasterChats.isNotEmpty ? _allMasterChats : _chats)
+          .where((c) => !c.isArchived)
+          .fold(0, (sum, c) => sum + c.unreadCount);
 
   // Unread per tab
-  int get unassignedUnread => _chats
-      .where((c) => !c.isArchived && c.status == 'Unassigned')
-      .fold(0, (sum, c) => sum + c.unreadCount);
-  int get assignedUnread => _chats
-      .where((c) => !c.isArchived && c.status == 'Assigned')
-      .fold(0, (sum, c) => sum + c.unreadCount);
-  int get resolvedUnread => _chats
-      .where((c) => !c.isArchived && c.status == 'Resolved')
-      .fold(0, (sum, c) => sum + c.unreadCount);
+  int get unassignedUnread =>
+      (_allMasterChats.isNotEmpty ? _allMasterChats : _chats)
+          .where((c) => !c.isArchived && c.status == 'Unassigned')
+          .fold(0, (sum, c) => sum + c.unreadCount);
+  int get assignedUnread =>
+      (_allMasterChats.isNotEmpty ? _allMasterChats : _chats)
+          .where((c) => !c.isArchived && c.status == 'Assigned')
+          .fold(0, (sum, c) => sum + c.unreadCount);
+  int get resolvedUnread =>
+      (_allMasterChats.isNotEmpty ? _allMasterChats : _chats)
+          .where((c) => !c.isArchived && c.status == 'Resolved')
+          .fold(0, (sum, c) => sum + c.unreadCount);
 
   // ── Starred Messages ──
 
@@ -3340,16 +3340,13 @@ class ChatProvider with ChangeNotifier {
     final pinnedInOrder = filtered.where((c) => c.isPinned).toList();
 
     // Pastikan semua pinned chat terdaftar di _pinnedIds agar urutannya konsisten dan stabil
-    // KONSISTEN: Tambahkan pinned chat baru ke AWAL (beginning) seperti togglePin
-    bool pinnedChanged = false;
+    // KONSISTEN: Tambahkan pinned chat baru ke AWAL (beginning) seperti togglePin.
+    // TIDAK menulis SharedPreferences di sini (side-effect disk I/O dihapus demi
+    // menghindari lag saat getter dipanggil pada setiap frame build).
     for (final c in pinnedInOrder) {
       if (!_pinnedIds.contains(c.id)) {
         _pinnedIds = {c.id, ..._pinnedIds};
-        pinnedChanged = true;
       }
-    }
-    if (pinnedChanged) {
-      _savePinnedState();
     }
 
     final pinnedList = _pinnedIds.toList();
@@ -4632,6 +4629,7 @@ class ChatProvider with ChangeNotifier {
     _saveReadDebounce?.cancel();
     _savePinnedDebounce?.cancel();
     _saveArchivedDebounce?.cancel();
+    _tabFetchDebounce?.cancel();
     _signalRRefreshTimer?.cancel();
     _isDisposed = true;
     super.dispose();

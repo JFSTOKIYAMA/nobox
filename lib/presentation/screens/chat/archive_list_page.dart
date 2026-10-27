@@ -70,7 +70,9 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
             showDialog(
               context: context,
               builder: (ctx) => AlertDialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 title: const Text(
                   'Unarchive Conversation',
                   textAlign: TextAlign.center,
@@ -89,7 +91,10 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                   TextButton(
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.grey.shade600,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 10,
+                      ),
                     ),
                     onPressed: () => Navigator.pop(ctx),
                     child: const Text('Cancel', style: TextStyle(fontSize: 15)),
@@ -99,8 +104,13 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 10,
+                      ),
                     ),
                     onPressed: () async {
                       Navigator.pop(ctx);
@@ -118,7 +128,10 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                         setState(() => _selectedChats.clear());
                       }
                     },
-                    child: const Text('Confirm', style: TextStyle(fontSize: 15)),
+                    child: const Text(
+                      'Confirm',
+                      style: TextStyle(fontSize: 15),
+                    ),
                   ),
                 ],
               ),
@@ -161,7 +174,9 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
         }
       },
       child: Scaffold(
-        backgroundColor: isDark ? const Color(0xFF121B22) : const Color(0xFFF0F2F5),
+        backgroundColor: isDark
+            ? const Color(0xFF121B22)
+            : const Color(0xFFF0F2F5),
         appBar: _selectedChats.isNotEmpty
             ? _buildSelectionAppBar(context)
             : _buildNormalAppBar(context),
@@ -174,7 +189,9 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                 color: isDark ? const Color(0xFF1F2C34) : Colors.white,
                 border: Border(
                   bottom: BorderSide(
-                    color: isDark ? Colors.white.withOpacity(0.1) : Colors.grey.shade300,
+                    color: isDark
+                        ? Colors.white.withOpacity(0.1)
+                        : Colors.grey.shade300,
                     width: 1,
                   ),
                 ),
@@ -187,11 +204,21 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                 style: TextStyle(color: isDark ? Colors.white : Colors.black),
                 decoration: InputDecoration(
                   hintText: 'Search conversation',
-                  hintStyle: TextStyle(color: isDark ? Colors.grey[500] : Colors.grey[600]),
-                  prefixIcon: Icon(Icons.search, color: isDark ? Colors.grey[500] : Colors.grey[600]),
+                  hintStyle: TextStyle(
+                    color: isDark ? Colors.grey[500] : Colors.grey[600],
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    color: isDark ? Colors.grey[500] : Colors.grey[600],
+                  ),
                   filled: true,
-                  fillColor: isDark ? const Color(0xFF2C3940) : const Color(0xFFF1F5F9),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                  fillColor: isDark
+                      ? const Color(0xFF2C3940)
+                      : const Color(0xFFF1F5F9),
+                  contentPadding: const EdgeInsets.symmetric(
+                    vertical: 0,
+                    horizontal: 16,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none,
@@ -199,20 +226,24 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                 ),
               ),
             ),
-            
+
             // FITUR: Daftar Pesan Arsip
             // FUNGSI: Mengambil daftar percakapan arsip dari ChatProvider dan me-render list UI-nya beserta logika filter pencarian.
             Expanded(
               child: Consumer<ChatProvider>(
                 builder: (context, chatProvider, _) {
                   var chats = chatProvider.archivedChats;
-                  
+
                   if (_searchQuery.isNotEmpty) {
-                    chats = chats.where((chat) => 
-                      chat.sender.toLowerCase().contains(_searchQuery.toLowerCase())
-                    ).toList();
+                    chats = chats
+                        .where(
+                          (chat) => chat.sender.toLowerCase().contains(
+                            _searchQuery.toLowerCase(),
+                          ),
+                        )
+                        .toList();
                   }
-                  
+
                   if (chats.isEmpty) {
                     return RefreshIndicator(
                       onRefresh: () => chatProvider.syncArchivedConversations(),
@@ -225,11 +256,24 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.inventory_2_outlined, size: 80, color: isDark ? Colors.grey.shade700 : Colors.grey.shade400),
+                                  Icon(
+                                    Icons.inventory_2_outlined,
+                                    size: 80,
+                                    color: isDark
+                                        ? Colors.grey.shade700
+                                        : Colors.grey.shade400,
+                                  ),
                                   const SizedBox(height: 16),
                                   Text(
-                                    _searchQuery.isEmpty ? 'No archived chats' : 'No search results',
-                                    style: TextStyle(color: isDark ? Colors.grey.shade500 : Colors.grey.shade600, fontSize: 16),
+                                    _searchQuery.isEmpty
+                                        ? 'No archived chats'
+                                        : 'No search results',
+                                    style: TextStyle(
+                                      color: isDark
+                                          ? Colors.grey.shade500
+                                          : Colors.grey.shade600,
+                                      fontSize: 16,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -247,7 +291,12 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                       itemCount: chats.length,
                       itemBuilder: (context, index) {
                         final chat = chats[index];
-                        return _buildChatTile(context, chat, chatProvider, isDark);
+                        return _buildChatTile(
+                          context,
+                          chat,
+                          chatProvider,
+                          isDark,
+                        );
                       },
                     ),
                   );
@@ -266,11 +315,26 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
     if (rawTime.isEmpty) return '';
     try {
       String timeString = rawTime;
-      if (!timeString.endsWith('Z') && !timeString.contains('+') && timeString.length >= 19) {
+      if (!timeString.endsWith('Z') &&
+          !timeString.contains('+') &&
+          timeString.length >= 19) {
         timeString += 'Z';
       }
       final dt = DateTime.parse(timeString).toLocal();
-      final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      final months = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
       return '${dt.day} ${months[dt.month - 1]}, ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     } catch (_) {
       return rawTime;
@@ -286,8 +350,10 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
         color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
-        border: Border.all(color: isDark ? Colors.grey.shade700 : Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8), 
+        border: Border.all(
+          color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+        ),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         'Archived',
@@ -303,9 +369,11 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
   // FITUR: Preview Pesan Terakhir
   // FUNGSI: Merender baris preview teks pesan terakhir, dengan pengecekan khusus jika pesannya unsupported atau format attachment tertentu.
   Widget _buildLastMessageRow(ChatModel chat, bool isDark) {
-    final messageColor = isDark ? Colors.grey.shade400 : Colors.grey.shade600; 
+    final messageColor = isDark ? Colors.grey.shade400 : Colors.grey.shade600;
     if (chat.lastMessageType != null && chat.lastMessageType!.isNotEmpty) {
-      final isUnsupported = chat.lastMessageType!.toLowerCase().contains('unsupported');
+      final isUnsupported = chat.lastMessageType!.toLowerCase().contains(
+        'unsupported',
+      );
       if (isUnsupported) {
         return Row(
           children: [
@@ -313,7 +381,11 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
             const SizedBox(width: 4),
             Text(
               chat.lastMessageType!,
-              style: TextStyle(fontSize: 13, color: Colors.red.shade400, fontStyle: FontStyle.italic),
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.red.shade400,
+                fontStyle: FontStyle.italic,
+              ),
             ),
           ],
         );
@@ -321,7 +393,7 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
 
       String mappedType = chat.lastMessageType!;
       String icon = '🌟 ';
-      
+
       switch (mappedType.toLowerCase()) {
         case '1':
         case 'text':
@@ -374,17 +446,35 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
         return Row(
           children: [
             Text(icon, style: const TextStyle(fontSize: 14)),
-            Text(mappedType, style: TextStyle(fontSize: 13, color: messageColor, fontStyle: FontStyle.italic)),
+            Text(
+              mappedType,
+              style: TextStyle(
+                fontSize: 13,
+                color: messageColor,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
           ],
         );
       }
-    } 
+    }
     String displayMessage = chat.lastMessage;
-    if (displayMessage.startsWith('{') && displayMessage.contains('"Filename"')) {
+    if (displayMessage.startsWith('{') &&
+        displayMessage.contains('"Filename"')) {
       final lower = displayMessage.toLowerCase();
-      if (lower.contains('"ptt":true') || lower.contains('"ptt": true') || lower.contains('.ogg') || lower.contains('.mp3') || lower.contains('voice note') || lower.contains('pesan suara') || lower.contains('voice_')) {
+      if (lower.contains('"ptt":true') ||
+          lower.contains('"ptt": true') ||
+          lower.contains('.ogg') ||
+          lower.contains('.mp3') ||
+          lower.contains('voice note') ||
+          lower.contains('pesan suara') ||
+          lower.contains('voice_')) {
         displayMessage = '🎤 Voice Message';
-      } else if (lower.contains('.jpg') || lower.contains('.png') || lower.contains('.jpeg') || lower.contains('photo') || lower.contains('foto')) {
+      } else if (lower.contains('.jpg') ||
+          lower.contains('.png') ||
+          lower.contains('.jpeg') ||
+          lower.contains('photo') ||
+          lower.contains('foto')) {
         displayMessage = '📷 Photo';
       } else if (lower.contains('.mp4') || lower.contains('video')) {
         displayMessage = '🎬 Video';
@@ -395,43 +485,102 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
 
     // Deteksi nama file mentah (non-JSON) berdasarkan ekstensi/pola nama
     bool isDocumentAlready = displayMessage.startsWith('📄');
-    if (!displayMessage.startsWith('📷') && !displayMessage.startsWith('🎬') && 
-        !displayMessage.startsWith('🎤') && !isDocumentAlready &&
-        !displayMessage.startsWith('📎') && !displayMessage.startsWith('📍') &&
-        !displayMessage.startsWith('👤') && !displayMessage.startsWith('🌟')) {
+    if (!displayMessage.startsWith('📷') &&
+        !displayMessage.startsWith('🎬') &&
+        !displayMessage.startsWith('🎤') &&
+        !isDocumentAlready &&
+        !displayMessage.startsWith('📎') &&
+        !displayMessage.startsWith('📍') &&
+        !displayMessage.startsWith('👤') &&
+        !displayMessage.startsWith('🌟')) {
       final lower = displayMessage.toLowerCase().trim();
-      if (['.webm', '.tgs', '.webp'].any((ext) => lower.endsWith(ext)) || ['🌟 sticker', '🎬 sticker'].contains(lower)) {
+      if (['.webm', '.tgs', '.webp'].any((ext) => lower.endsWith(ext)) ||
+          ['🌟 sticker', '🎬 sticker'].contains(lower)) {
         if (lower.endsWith('.webm') || lower.endsWith('.tgs')) {
           displayMessage = '🎬 Sticker';
         } else {
           displayMessage = '🌟 Sticker';
         }
-      } else if (['.jpg', '.jpeg', '.png', '.gif', '.bmp'].any((ext) => lower.endsWith(ext)) || 
-          lower.startsWith('img-') || lower.startsWith('img_') || lower.startsWith('photo')) {
+      } else if ([
+            '.jpg',
+            '.jpeg',
+            '.png',
+            '.gif',
+            '.bmp',
+          ].any((ext) => lower.endsWith(ext)) ||
+          lower.startsWith('img-') ||
+          lower.startsWith('img_') ||
+          lower.startsWith('photo')) {
         displayMessage = '📷 Photo';
-      } else if (['.mp4', '.avi', '.mov', '.3gp', '.mkv'].any((ext) => lower.endsWith(ext)) || 
-                 lower.startsWith('vid-') || lower.startsWith('vid_')) {
+      } else if ([
+            '.mp4',
+            '.avi',
+            '.mov',
+            '.3gp',
+            '.mkv',
+          ].any((ext) => lower.endsWith(ext)) ||
+          lower.startsWith('vid-') ||
+          lower.startsWith('vid_')) {
         displayMessage = '🎬 Video';
-      } else if (['.ogg', '.opus', '.mp3', '.wav', '.m4a', '.aac', '.amr', '.weba'].any((ext) => lower.endsWith(ext)) || 
-                 lower.startsWith('voice_') || lower.startsWith('ptt-') || lower.startsWith('aud-')) {
+      } else if ([
+            '.ogg',
+            '.opus',
+            '.mp3',
+            '.wav',
+            '.m4a',
+            '.aac',
+            '.amr',
+            '.weba',
+          ].any((ext) => lower.endsWith(ext)) ||
+          lower.startsWith('voice_') ||
+          lower.startsWith('ptt-') ||
+          lower.startsWith('aud-')) {
         displayMessage = '🎤 Voice Message';
-      } else if (['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.csv', '.zip', '.rar'].any((ext) => lower.endsWith(ext))) {
+      } else if ([
+        '.pdf',
+        '.doc',
+        '.docx',
+        '.xls',
+        '.xlsx',
+        '.ppt',
+        '.pptx',
+        '.txt',
+        '.csv',
+        '.zip',
+        '.rar',
+      ].any((ext) => lower.endsWith(ext))) {
         displayMessage = '📄 Document';
-      } else if (RegExp(r'\.[a-zA-Z0-9]{2,5}$').hasMatch(lower) && !lower.contains(' ') && lower.length < 100) {
+      } else if (RegExp(r'\.[a-zA-Z0-9]{2,5}$').hasMatch(lower) &&
+          !lower.contains(' ') &&
+          lower.length < 100) {
         displayMessage = '📎 Attachment';
       }
     } else if (isDocumentAlready || displayMessage.startsWith('📎')) {
-       final lower = displayMessage.toLowerCase().trim();
-       if (isDocumentAlready && (lower.contains('img-') || lower.contains('vid-') || lower.contains('wa00'))) {
-         displayMessage = '📄 Document';
-       } else if (displayMessage.startsWith('📎') && (lower.contains('img-') || lower.contains('img_'))) {
-         displayMessage = '📷 Photo';
-       }
+      final lower = displayMessage.toLowerCase().trim();
+      if (isDocumentAlready &&
+          (lower.contains('img-') ||
+              lower.contains('vid-') ||
+              lower.contains('wa00'))) {
+        displayMessage = '📄 Document';
+      } else if (displayMessage.startsWith('📎') &&
+          (lower.contains('img-') || lower.contains('img_'))) {
+        displayMessage = '📷 Photo';
+      }
     }
 
-    if (RegExp(r'^(📷|🖼️|🖼)\s*(Photo|Foto)', caseSensitive: false).hasMatch(displayMessage)) {
-      String t = displayMessage.replaceAll('📷', '').replaceAll('🖼️', '').replaceAll('🖼', '').trim();
-      final match = RegExp(r'^(Photo|Foto)\s*(.*)$', caseSensitive: false).firstMatch(t);
+    if (RegExp(
+      r'^(📷|🖼️|🖼)\s*(Photo|Foto)',
+      caseSensitive: false,
+    ).hasMatch(displayMessage)) {
+      String t = displayMessage
+          .replaceAll('📷', '')
+          .replaceAll('🖼️', '')
+          .replaceAll('🖼', '')
+          .trim();
+      final match = RegExp(
+        r'^(Photo|Foto)\s*(.*)$',
+        caseSensitive: false,
+      ).firstMatch(t);
       if (match != null) {
         final desc = match.group(2)?.trim() ?? '';
         displayMessage = desc.isNotEmpty ? '📷 $desc' : '📷 Foto';
@@ -448,11 +597,20 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
 
   // FITUR: Chat Tile Item (Daftar List)
   // FUNGSI: Merender UI utuh untuk satu baris chat, menangani transisi warna latar belakang saat chat dipilih, serta menampilkan avatar, info pengirim, dan trailing indicator.
-  Widget _buildChatTile(BuildContext context, ChatModel chat, ChatProvider chatProvider, bool isDark) {
+  Widget _buildChatTile(
+    BuildContext context,
+    ChatModel chat,
+    ChatProvider chatProvider,
+    bool isDark,
+  ) {
     final isSelected = _selectedChats.contains(chat.id);
-    
+
     return Container(
-      color: isSelected ? (isDark ? Colors.blue.shade900.withOpacity(0.3) : Colors.blue.shade50) : (isDark ? const Color(0xFF111B21) : Colors.white),
+      color: isSelected
+          ? (isDark
+                ? Colors.blue.shade900.withOpacity(0.3)
+                : Colors.blue.shade50)
+          : (isDark ? const Color(0xFF111B21) : Colors.white),
       child: Column(
         children: [
           InkWell(
@@ -462,8 +620,10 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
               // Jika dalam mode pilih, ketuk chat menambah pilihan
               if (_selectedChats.isNotEmpty) {
                 setState(() {
-                  if (isSelected) _selectedChats.remove(chat.id);
-                  else _selectedChats.add(chat.id);
+                  if (isSelected)
+                    _selectedChats.remove(chat.id);
+                  else
+                    _selectedChats.add(chat.id);
                 });
                 return;
               }
@@ -471,11 +631,9 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
               chatProvider.markAsRead(chat.id);
               await Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => ChatDetailPage(chat: chat),
-                ),
+                MaterialPageRoute(builder: (_) => ChatDetailPage(chat: chat)),
               );
-              
+
               if (mounted) {
                 chatProvider.syncArchivedConversations();
               }
@@ -488,8 +646,10 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                 setState(() => _selectedChats.add(chat.id));
               } else {
                 setState(() {
-                  if (isSelected) _selectedChats.remove(chat.id);
-                  else _selectedChats.add(chat.id);
+                  if (isSelected)
+                    _selectedChats.remove(chat.id);
+                  else
+                    _selectedChats.add(chat.id);
                 });
               }
             },
@@ -508,8 +668,12 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                               height: 48,
                               alignment: Alignment.center,
                               child: Icon(
-                                isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
-                                color: isSelected ? Colors.blue.shade600 : Colors.grey.shade400,
+                                isSelected
+                                    ? Icons.check_circle
+                                    : Icons.radio_button_unchecked,
+                                color: isSelected
+                                    ? Colors.blue.shade600
+                                    : Colors.grey.shade400,
                                 size: 28,
                               ),
                             )
@@ -527,152 +691,197 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Nama Pengirim
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                chat.sender,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                  color: isDark ? Colors.white : Colors.black,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-
-                        // Last message
-                        _buildLastMessageRow(chat, isDark),
-
-                        // Tags & Funnel
-                        if (chat.tags.isNotEmpty || chat.funnel.isNotEmpty) ...[
-                          const SizedBox(height: 4),
                           Row(
                             children: [
-                              if (chat.tags.isNotEmpty) ...[
-                                Icon(Icons.local_offer, size: 13, color: Colors.grey.shade500),
-                                const SizedBox(width: 3),
-                                Flexible(
-                                  child: Text(
-                                    chat.tags.join(', '),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                                  ),
-                                ),
-                              ],
-                              if (chat.tags.isNotEmpty && chat.funnel.isNotEmpty) ...[
-                                const SizedBox(width: 6),
-                                Text('|', style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
-                                const SizedBox(width: 6),
-                              ],
-                              if (chat.funnel.isNotEmpty) ...[
-                                Icon(Icons.filter_alt, size: 13, color: Colors.grey.shade500),
-                                const SizedBox(width: 3),
-                                Text(
-                                  chat.funnel,
-                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-
-                        // Channel Icon and Name
-                        if (chat.channelName.isNotEmpty && chat.channelName != 'Not Found') ...[
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              ChannelIcon(chId: chat.chId, channelName: '${chat.channelType} ${chat.channelName}', size: 14),
-                              const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
-                                  chat.channelName,
+                                  chat.sender,
                                   style: TextStyle(
-                                    fontSize: 13,
-                                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                    color: isDark ? Colors.white : Colors.black,
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
                           ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  
-                  // ── Trailing Content (Sisi Kanan) ──
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          // Jam & Pin (Opsional untuk archived)
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                _formatTime(chat.time),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: isDark ? Colors.grey.shade400 : Colors.grey.shade500,
-                                ),
-                              ),
-                              if (chat.isPinned) ...[
-                                const SizedBox(width: 4),
-                                Icon(Icons.push_pin, size: 14, color: Colors.blue.shade400),
+                          const SizedBox(height: 4),
+
+                          // Last message
+                          _buildLastMessageRow(chat, isDark),
+
+                          // Tags & Funnel
+                          if (chat.tags.isNotEmpty ||
+                              chat.funnel.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                if (chat.tags.isNotEmpty) ...[
+                                  Icon(
+                                    Icons.local_offer,
+                                    size: 13,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Flexible(
+                                    child: Text(
+                                      chat.tags.join(', '),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                if (chat.tags.isNotEmpty &&
+                                    chat.funnel.isNotEmpty) ...[
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '|',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade400,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                ],
+                                if (chat.funnel.isNotEmpty) ...[
+                                  Icon(
+                                    Icons.filter_alt,
+                                    size: 13,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    chat.funnel,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
                               ],
-                            ],
-                          ),
-                          
-                          // Badge Unread (Daftar Arsip juga menampilkan unread jika ada pesan baru)
-                          if (chat.unreadCount > 0) ...[
-                            const SizedBox(height: 6),
-                            Container(
-                              width: 20,
-                              height: 20,
-                              decoration: const BoxDecoration(
-                                color: Colors.blue,
-                                shape: BoxShape.circle,
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                chat.unreadCount.toString(),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
+                            ),
+                          ],
+
+                          // Channel Icon and Name
+                          if (chat.channelName.isNotEmpty &&
+                              chat.channelName != 'Not Found') ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                ChannelIcon(
+                                  chId: chat.chId,
+                                  channelName:
+                                      '${chat.channelType} ${chat.channelName}',
+                                  size: 14,
                                 ),
-                              ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    chat.channelName,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: isDark
+                                          ? Colors.grey.shade400
+                                          : Colors.grey.shade600,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ],
                       ),
-                      
-                      // Status badge
-                      _buildStatusBadge(chat.status, isDark),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(width: 8),
+
+                    // ── Trailing Content (Sisi Kanan) ──
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            // Jam & Pin (Opsional untuk archived)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _formatTime(chat.time),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark
+                                        ? Colors.grey.shade400
+                                        : Colors.grey.shade500,
+                                  ),
+                                ),
+                                if (chat.isPinned) ...[
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    Icons.push_pin,
+                                    size: 14,
+                                    color: Colors.blue.shade400,
+                                  ),
+                                ],
+                              ],
+                            ),
+
+                            // Badge Unread (Daftar Arsip juga menampilkan unread jika ada pesan baru)
+                            if (chat.unreadCount > 0) ...[
+                              const SizedBox(height: 6),
+                              Container(
+                                constraints: const BoxConstraints(
+                                  minWidth: 20,
+                                  minHeight: 20,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  chat.unreadCount > 99
+                                      ? '99+'
+                                      : chat.unreadCount.toString(),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+
+                        // Status badge
+                        _buildStatusBadge(chat.status, isDark),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 12),
             height: 0.5,
-            color: isDark ? Colors.white.withOpacity(0.1) : Colors.grey.shade300,
+            color: isDark
+                ? Colors.white.withOpacity(0.1)
+                : Colors.grey.shade300,
           ),
         ],
       ),
     );
   }
 }
-

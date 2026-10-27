@@ -123,7 +123,9 @@ class ApiClient {
     // pemborosan memori pada payload besar (misal gambar base64) di tahap produksi.
     if (kDebugMode) {
       _dio.interceptors.add(
-        LogInterceptor(requestBody: true, responseBody: true),
+        // Jangan log body binary/FormData (video/gambar besar) agar stream
+        // tidak dibaca ulang dan menyebabkan crash/timeout saat upload.
+        LogInterceptor(requestBody: false, responseBody: true),
       );
     }
   }
@@ -255,11 +257,22 @@ class ApiClient {
     String path, {
     dynamic data,
     Map<String, dynamic>? queryParameters,
+    Options? options,
   }) async {
+    Options? requestOptions = options;
+    if (data is FormData) {
+      // Untuk upload file/video besar: pakai multipart/form-data dan timeout
+      // lebih panjang agar boundary multipart tidak tertimpa header JSON default.
+      requestOptions = (options ?? Options()).copyWith(
+        contentType: 'multipart/form-data',
+        sendTimeout: const Duration(seconds: 180),
+      );
+    }
     final response = await _dio.post(
       path,
       data: data,
       queryParameters: queryParameters,
+      options: requestOptions,
     );
     return response;
   }

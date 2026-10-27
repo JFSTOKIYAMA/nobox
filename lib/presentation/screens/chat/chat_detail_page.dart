@@ -4177,14 +4177,20 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       content: displayContent,
       isMe: true,
       time: timeString,
+      rawTime: now.toUtc().toIso8601String(), // Wajib ada ISO string agar urutan bubble stabil
       status: MessageStatus.sent,
       messageType: isStickerFile ? MessageType.sticker : MessageType.video,
-      // Only set videoUrl for animated video stickers (.webm, .mp4, .mov)
-      // Only set imageUrl for static stickers (.webp, .png, .gif) and TGS
-      videoUrl: isAnimatedVideoSticker ? pickedFile.path : null,
+      // Selalu pasang path lokal agar video dapat langsung di-preview.
+      // imageUrl hanya untuk static sticker (.webp, .png, .gif) dan TGS.
+      videoUrl: pickedFile.path,
       imageUrl: (isStaticSticker || isTgsSticker) ? pickedFile.path : null,
       ack: 1,
     );
+
+    // Simpan pesan & waktu sebelumnya untuk rollback jika kirim video gagal
+    final prevLastMessage = chat.lastMessage;
+    final prevTime = chat.time;
+    final prevLastMessageType = chat.lastMessageType;
 
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
 
@@ -4227,18 +4233,44 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         setState(() {
           _messages[messageIndex] = _messages[messageIndex].copyWith(
             status: MessageStatus.delivered,
-            videoUrl: response.data, // FIX: Simpan URL dari server
+            videoUrl: response.data ?? pickedFile.path, // FIX: Simpan URL dari server
             ack: 2,
           );
         });
       } else {
+        // GAGAL KIRIM: Update status pesan jadi ack 4
         setState(() {
           _messages[messageIndex] = _messages[messageIndex].copyWith(ack: 4);
         });
+
+        // ROLLBACK POSISI DI CHAT LIST: Kembalikan waktu & pesan ke semula
+        // agar obrolan TIDAK terlempar ke paling bawah daftar chat!
+        chatProvider.updateLocalLastMessage(
+          chat.id,
+          prevLastMessage,
+          overrideTime: prevTime,
+          lastMessageType: prevLastMessageType,
+          updateTimeAndPosition: false, // Pertahankan posisinya seperti sebelumnya
+        );
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to send video: ${response.error}'),
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Failed to send video: ${response.error ?? "Upload error"}',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
             backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.only(bottom: 40, left: 20, right: 20),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
       }
@@ -4569,12 +4601,13 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     final lat = pickedLocation.latitude;
     final lng = pickedLocation.longitude;
     final mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+    final locationText = '📍 Lokasi saya\n$mapsUrl';
 
     final now = DateTime.now();
     final timeString = _formatFullTime(now);
 
     final newMessage = Message(
-      content: '📍 Lokasi saya\n$mapsUrl',
+      content: locationText,
       isMe: true,
       time: timeString,
       rawTime: now.toUtc().toIso8601String(),
@@ -4599,17 +4632,62 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     bool isSuccess = false;
     String? errorMsg;
 
-    // Menggunakan SignalR untuk SEMUA channel (WhatsApp & Telegram)
+    // 1. Coba kirim via SignalR terlebih dahulu
     // agar lokasi tercatat di database backend NoBox.
     final sendError = await chatProvider.sendMessageViaSignalR(
       chat: chat,
       type: "1", // Location is sent as text
-      msg: '📍 Lokasi saya\n$mapsUrl',
+      msg: locationText,
     );
 
     isSuccess = (sendError == null);
-    if (!isSuccess)
+    if (!isSuccess) {
       errorMsg = sendError ?? 'Failed to send location via SignalR';
+    }
+
+    // 2. FALLBACK ke REST API jika SignalR gagal
+    if (!isSuccess) {
+      debugPrint(
+        'ChatDetail: ⚠️ SignalR location send failed ($sendError). Mencoba fallback REST API...',
+      );
+      try {
+        final isGroupChat =
+            chat.isGroup ||
+            (chat.groupId.isNotEmpty && chat.groupId != '0');
+
+        final resolvedGroupId = isGroupChat ? chat.groupId : null;
+
+        final resp = await _chatService.sendMessage(
+          MessageRequest(
+            receiver: chat.id.isNotEmpty && chat.id != '0'
+                ? chat.id
+                : chat.contactId,
+            content: locationText,
+            accountId: _getResolvedAccountId(chatProvider),
+            contactId: isGroupChat
+                ? null
+                : (chat.contactId.isNotEmpty ? chat.contactId : chat.link),
+            channelId: chat.chId,
+            groupId: resolvedGroupId,
+          ),
+        );
+
+        if (!resp.isError) {
+          isSuccess = true;
+          errorMsg = null;
+          debugPrint(
+            'ChatDetail: ✅ Lokasi berhasil terkirim via REST API fallback!',
+          );
+        } else {
+          errorMsg = resp.error ?? 'Gagal mengirim lokasi';
+        }
+      } catch (restErr) {
+        debugPrint(
+          'ChatDetail: ❌ REST API location fallback exception: $restErr',
+        );
+        errorMsg = restErr.toString();
+      }
+    }
 
     if (isSuccess) {
       final updatedMsg = newMessage.copyWith(
@@ -4631,7 +4709,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           listen: false,
         ).updateLocalLastMessage(
           chat.id,
-          '📍 Lokasi saya\n$mapsUrl',
+          locationText,
           isFromMe: true,
         );
       }

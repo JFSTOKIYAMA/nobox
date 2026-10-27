@@ -1,4 +1,4 @@
- // =====================================================================
+// =====================================================================
 // FITUR 4: Detail Ruang Obrolan (Message Bubble Widget)
 // TUJUAN: Mengelola antarmuka visual satu gelembung pesan, termasuk teks, media, jam pengiriman, dan indikator centang baca.
 // CARA KERJA: Centang dipetakan berdasarkan status ack: 1 (Abu 1), 2 (Abu 2), 3 (Biru 2).
@@ -10,6 +10,8 @@ import 'package:flutter/gestures.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:video_player/video_player.dart';
 import 'package:path_provider/path_provider.dart';
@@ -82,19 +84,17 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
       duration: const Duration(milliseconds: 300),
     );
 
-    _resetAnimation = Tween<double>(
-      begin: 0,
-      end: 0,
-    ).animate(
-      CurvedAnimation(
-        parent: _resetAnimationController,
-        curve: Curves.easeOutCubic,
-      ),
-    )..addListener(() {
-        setState(() {
-          _dragPosition = _resetAnimation.value;
+    _resetAnimation =
+        Tween<double>(begin: 0, end: 0).animate(
+          CurvedAnimation(
+            parent: _resetAnimationController,
+            curve: Curves.easeOutCubic,
+          ),
+        )..addListener(() {
+          setState(() {
+            _dragPosition = _resetAnimation.value;
+          });
         });
-      });
   }
 
   @override
@@ -146,10 +146,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
       widget.onReply!();
     }
 
-    _resetAnimation = Tween<double>(
-      begin: _dragPosition,
-      end: 0,
-    ).animate(
+    _resetAnimation = Tween<double>(begin: _dragPosition, end: 0).animate(
       CurvedAnimation(
         parent: _resetAnimationController,
         curve: Curves.easeOutCubic,
@@ -162,10 +159,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
 
   void _onHorizontalDragCancel() {
     _isDragging = false;
-    _resetAnimation = Tween<double>(
-      begin: _dragPosition,
-      end: 0,
-    ).animate(
+    _resetAnimation = Tween<double>(begin: _dragPosition, end: 0).animate(
       CurvedAnimation(
         parent: _resetAnimationController,
         curve: Curves.easeOutCubic,
@@ -203,13 +197,16 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
       behavior: HitTestBehavior.opaque,
       onTap: widget.onTap,
       onLongPress: widget.onLongPress,
-      onHorizontalDragStart:
-          widget.onReply != null ? _onHorizontalDragStart : null,
-      onHorizontalDragUpdate:
-          widget.onReply != null ? _onHorizontalDragUpdate : null,
+      onHorizontalDragStart: widget.onReply != null
+          ? _onHorizontalDragStart
+          : null,
+      onHorizontalDragUpdate: widget.onReply != null
+          ? _onHorizontalDragUpdate
+          : null,
       onHorizontalDragEnd: widget.onReply != null ? _onHorizontalDragEnd : null,
-      onHorizontalDragCancel:
-          widget.onReply != null ? _onHorizontalDragCancel : null,
+      onHorizontalDragCancel: widget.onReply != null
+          ? _onHorizontalDragCancel
+          : null,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
         child: Stack(
@@ -226,17 +223,23 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                     duration: const Duration(milliseconds: 100),
                     curve: Curves.easeOut,
                     child: AnimatedOpacity(
-                      opacity:
-                          (_dragPosition / _replyThreshold).clamp(0.3, 1.0),
+                      opacity: (_dragPosition / _replyThreshold).clamp(
+                        0.3,
+                        1.0,
+                      ),
                       duration: const Duration(milliseconds: 100),
                       child: Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: (_dragPosition >= _replyThreshold
-                                  ? AppTheme.primaryColor
-                                  : Colors.grey.shade500)
-                              .withOpacity(
-                                  _dragPosition >= _replyThreshold ? 0.25 : 0.15),
+                          color:
+                              (_dragPosition >= _replyThreshold
+                                      ? AppTheme.primaryColor
+                                      : Colors.grey.shade500)
+                                  .withOpacity(
+                                    _dragPosition >= _replyThreshold
+                                        ? 0.25
+                                        : 0.15,
+                                  ),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
@@ -258,12 +261,14 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
               curve: Curves.easeOutCubic,
               transform: Matrix4.translationValues(_dragPosition, 0, 0),
               child: Column(
-                crossAxisAlignment:
-                    isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                crossAxisAlignment: isMe
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment:
-                        isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+                    mainAxisAlignment: isMe
+                        ? MainAxisAlignment.end
+                        : MainAxisAlignment.start,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Flexible(
@@ -273,34 +278,56 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                           ),
                           child: Builder(
                             builder: (context) {
-                              final isNoBubble = _isStickerMessage(widget.message);
-                              final isMedia = !isNoBubble && (widget.message.messageType == MessageType.image || widget.message.messageType == MessageType.video || _hasVideoUrl(widget.message));
+                              final isNoBubble = _isStickerMessage(
+                                widget.message,
+                              );
+                              final isMedia =
+                                  !isNoBubble &&
+                                  (widget.message.messageType ==
+                                          MessageType.image ||
+                                      widget.message.messageType ==
+                                          MessageType.video ||
+                                      _hasVideoUrl(widget.message));
                               return Container(
                                 padding: isNoBubble
                                     ? EdgeInsets.zero
-                                    : (isMedia 
-                                        ? const EdgeInsets.all(4) 
-                                        : (widget.message.repliedMessage != null
-                                            ? const EdgeInsets.only(top: 4, bottom: 6) 
-                                            : const EdgeInsets.symmetric(horizontal: 10, vertical: 6))),
+                                    : (isMedia
+                                          ? const EdgeInsets.all(4)
+                                          : (widget.message.repliedMessage !=
+                                                    null
+                                                ? const EdgeInsets.only(
+                                                    top: 4,
+                                                    bottom: 6,
+                                                  )
+                                                : const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 6,
+                                                  ))),
                                 decoration: isNoBubble
                                     ? null
                                     : BoxDecoration(
                                         color: isMe
-                                            ? (isDarkMode ? const Color(0xFF0B2641) : AppTheme.primaryColor)
+                                            ? (isDarkMode
+                                                  ? const Color(0xFF0B2641)
+                                                  : AppTheme.primaryColor)
                                             : (isDarkMode
-                                                ? AppTheme.darkSurface
-                                                : Colors.white),
+                                                  ? AppTheme.darkSurface
+                                                  : Colors.white),
                                         borderRadius: BorderRadius.only(
                                           topLeft: const Radius.circular(12),
                                           topRight: const Radius.circular(12),
-                                          bottomLeft: Radius.circular(isMe ? 12 : 2),
-                                          bottomRight: Radius.circular(isMe ? 2 : 12),
+                                          bottomLeft: Radius.circular(
+                                            isMe ? 12 : 2,
+                                          ),
+                                          bottomRight: Radius.circular(
+                                            isMe ? 2 : 12,
+                                          ),
                                         ),
                                         boxShadow: [
                                           BoxShadow(
                                             color: Colors.black.withOpacity(
-                                                isDarkMode ? 0.3 : 0.08),
+                                              isDarkMode ? 0.3 : 0.08,
+                                            ),
                                             blurRadius: 1,
                                             offset: const Offset(0, 0.5),
                                           ),
@@ -309,21 +336,36 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                                 child: Builder(
                                   builder: (context) {
                                     final content = Column(
-                                      crossAxisAlignment: widget.message.repliedMessage != null
+                                      crossAxisAlignment:
+                                          widget.message.repliedMessage != null
                                           ? CrossAxisAlignment.stretch
                                           : CrossAxisAlignment.start,
                                       children: [
-                                        if (widget.message.repliedMessage != null)
-                                          _buildReplyPreview(context, isMe, isDarkMode),
+                                        if (widget.message.repliedMessage !=
+                                            null)
+                                          _buildReplyPreview(
+                                            context,
+                                            isMe,
+                                            isDarkMode,
+                                          ),
                                         Padding(
-                                          padding: (widget.message.repliedMessage != null && !isMedia)
-                                              ? const EdgeInsets.symmetric(horizontal: 10)
+                                          padding:
+                                              (widget.message.repliedMessage !=
+                                                      null &&
+                                                  !isMedia)
+                                              ? const EdgeInsets.symmetric(
+                                                  horizontal: 10,
+                                                )
                                               : EdgeInsets.zero,
-                                          child: _buildMessageContent(context, isMe, isDarkMode),
+                                          child: _buildMessageContent(
+                                            context,
+                                            isMe,
+                                            isDarkMode,
+                                          ),
                                         ),
                                       ],
                                     );
-                                    
+
                                     if (widget.message.repliedMessage != null) {
                                       return IntrinsicWidth(child: content);
                                     }
@@ -431,10 +473,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
             fontWeight: FontWeight.w400,
           ),
         ),
-        if (isMe) ...[
-          const SizedBox(width: 4),
-          _buildAckIcon(),
-        ],
+        if (isMe) ...[const SizedBox(width: 4), _buildAckIcon()],
       ],
     );
   }
@@ -444,35 +483,37 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
     if (repliedMsg == null) return const SizedBox.shrink();
 
     final replyContent = _cleanContent(repliedMsg.content);
-    
+
     // Cari pesan asli di daftar pesan untuk memastikan status isMe akurat
     Message? originalMsg;
     if (widget.allMessages != null) {
       try {
-        originalMsg = widget.allMessages!.firstWhere((m) => m.id == repliedMsg.id);
+        originalMsg = widget.allMessages!.firstWhere(
+          (m) => m.id == repliedMsg.id,
+        );
       } catch (_) {}
     }
-    
+
     final isRepliedMe = originalMsg?.isMe ?? repliedMsg.isMe;
     final replySender = isRepliedMe ? 'You' : 'Customer';
 
     return Container(
       margin: const EdgeInsets.only(left: 6, right: 6, bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      constraints: const BoxConstraints(minWidth: 140), // Mencegah kotak reply terlalu kecil/sempit
+      constraints: const BoxConstraints(
+        minWidth: 140,
+      ), // Mencegah kotak reply terlalu kecil/sempit
       decoration: BoxDecoration(
         color: isMe
             ? Colors.black.withOpacity(0.15) // Darker overlay for blue bubble
             : (isDarkMode
-                ? Colors.black.withOpacity(0.2)
-                : Colors.grey.shade100),
+                  ? Colors.black.withOpacity(0.2)
+                  : Colors.grey.shade100),
         borderRadius: BorderRadius.circular(8),
-        border: isMe 
+        border: isMe
             ? null
             : const Border(
-                left: BorderSide(
-                    color: AppTheme.primaryColor,
-                    width: 4),
+                left: BorderSide(color: AppTheme.primaryColor, width: 4),
               ),
       ),
       child: Column(
@@ -507,9 +548,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
             replySender,
             style: TextStyle(
               fontSize: 13,
-              color: isMe
-                  ? Colors.white
-                  : AppTheme.primaryColor,
+              color: isMe ? Colors.white : AppTheme.primaryColor,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -520,9 +559,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
               fontSize: 13,
               color: isMe
                   ? Colors.white.withOpacity(0.9)
-                  : (isDarkMode
-                      ? AppTheme.darkTextPrimary
-                      : Colors.black87),
+                  : (isDarkMode ? AppTheme.darkTextPrimary : Colors.black87),
               height: 1.3,
             ),
             maxLines: 2,
@@ -535,14 +572,29 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
 
   bool _isStickerMessage(Message msg) {
     if (msg.messageType == MessageType.sticker) return true;
-    final url = (msg.imageUrl ?? msg.videoUrl ?? msg.documentUrl ?? msg.imagePath ?? msg.documentName ?? '').toLowerCase();
-    if (url.isNotEmpty && (url.contains('.webm') || url.contains('.tgs') || url.contains('.webp') || url.contains('.ezgif'))) {
+    final url =
+        (msg.imageUrl ??
+                msg.videoUrl ??
+                msg.documentUrl ??
+                msg.imagePath ??
+                msg.documentName ??
+                '')
+            .toLowerCase();
+    if (url.isNotEmpty &&
+        (url.contains('.webm') ||
+            url.contains('.tgs') ||
+            url.contains('.webp') ||
+            url.contains('.ezgif'))) {
       return true;
     }
     return false;
   }
 
-  Widget _buildMessageContent(BuildContext context, bool isMe, bool isDarkMode) {
+  Widget _buildMessageContent(
+    BuildContext context,
+    bool isMe,
+    bool isDarkMode,
+  ) {
     // Issue 4: pesan edit/protocol/document(empty)/file kosong → render miring redup
     if (isUnsupportedWhatsAppContent(widget.message.content) ||
         widget.message.content == kUnsupportedWhatsAppLabel) {
@@ -564,7 +616,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
         widget.message.content.contains('🎬 Video') ||
         widget.message.messageType == MessageType.video ||
         _hasVideoUrl(widget.message)) {
-       return _buildVideoMessage(context, isMe, isDarkMode);
+      return _buildVideoMessage(context, isMe, isDarkMode);
     }
 
     switch (widget.message.messageType) {
@@ -620,11 +672,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
       mainAxisSize: MainAxisSize.min,
       children: List.generate(lines.length, (index) {
         final textToRender = lines[index].isEmpty ? '\u200B' : lines[index];
-        return _buildTextWithLinks(
-          textToRender,
-          isMe,
-          isDarkMode,
-        );
+        return _buildTextWithLinks(textToRender, isMe, isDarkMode);
       }),
     );
 
@@ -637,9 +685,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
             const SizedBox(height: 2),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                _buildTimestampRow(isMe),
-              ],
+              children: [_buildTimestampRow(isMe)],
             ),
           ],
         ),
@@ -666,29 +712,35 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
   Widget _buildStickerMessage(bool isMe, bool isDarkMode) {
     final imageUrl = widget.message.imageUrl ?? widget.message.videoUrl ?? '';
     final lowerUrl = imageUrl.toLowerCase();
-    
+
     // Classify sticker type for proper rendering
-    final isTgsSticker = lowerUrl.contains('.tgs');           // Telegram Lottie stickers
-    final isWebpSticker = lowerUrl.contains('.webp');         // Static WebP stickers
-    final isAnimatedVideoSticker = lowerUrl.contains('.webm') || lowerUrl.contains('.mp4') || lowerUrl.contains('.mov'); // WhatsApp animated stickers
-    final isStaticSticker = isWebpSticker || lowerUrl.contains('.png') || lowerUrl.contains('.jpg') || lowerUrl.contains('.jpeg');
+    final isTgsSticker = lowerUrl.contains('.tgs'); // Telegram Lottie stickers
+    final isWebpSticker = lowerUrl.contains('.webp'); // Static WebP stickers
+    final isAnimatedVideoSticker =
+        lowerUrl.contains('.webm') ||
+        lowerUrl.contains('.mp4') ||
+        lowerUrl.contains('.mov'); // WhatsApp animated stickers
+    final isStaticSticker =
+        isWebpSticker ||
+        lowerUrl.contains('.png') ||
+        lowerUrl.contains('.jpg') ||
+        lowerUrl.contains('.jpeg');
     final needsVideoPlayer = isAnimatedVideoSticker && !isTgsSticker;
 
     return Column(
-      crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: isMe
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
         ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: 180,
-            maxHeight: 180,
-          ),
+          constraints: const BoxConstraints(maxWidth: 180, maxHeight: 180),
           child: imageUrl.isNotEmpty
               ? (isTgsSticker
-                  // Telegram .tgs = Lottie animation, needs Lottie player (fallback to static for now)
-                  ? _buildTgsStickerFallback(isDarkMode)
-                  : (needsVideoPlayer
-                      ? AnimatedVideoSticker(url: imageUrl)
-                      : _buildStaticSticker(imageUrl, isDarkMode)))
+                    // Telegram .tgs = Lottie animation, needs Lottie player (fallback to static for now)
+                    ? _buildTgsStickerFallback(isDarkMode)
+                    : (needsVideoPlayer
+                          ? AnimatedVideoSticker(url: imageUrl)
+                          : _buildStaticSticker(imageUrl, isDarkMode)))
               : _buildStickerPlaceholder(isDarkMode),
         ),
         const SizedBox(height: 2),
@@ -780,9 +832,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
         color: isDarkMode ? Colors.grey[800] : Colors.grey[200],
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Center(
-        child: CircularProgressIndicator(strokeWidth: 2),
-      ),
+      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
     );
   }
 
@@ -795,25 +845,35 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
         borderRadius: BorderRadius.circular(8),
       ),
       child: Center(
-        child: Icon(Icons.emoji_emotions_outlined, size: 48, color: Colors.grey),
+        child: Icon(
+          Icons.emoji_emotions_outlined,
+          size: 48,
+          color: Colors.grey,
+        ),
       ),
     );
   }
 
   Widget _buildDocumentMessage(bool isMe, bool isDarkMode) {
     // Extract file name and extension from documentName or content
-    final fileName = widget.message.documentName ??
+    final fileName =
+        widget.message.documentName ??
         widget.message.content.replaceAll('📄 ', '').trim();
     final ext = fileName.contains('.')
         ? '.${fileName.split('.').last.toLowerCase()}'
         : '';
-        
+
     final cleanMessage = _cleanContent(widget.message.content);
     // Jika content bukan nama file (alias pesan email/teks), kita tampilkan sebagai caption
-    final hasCaption = cleanMessage.isNotEmpty && !cleanMessage.contains(fileName) && !cleanMessage.startsWith('📄 ');
+    final hasCaption =
+        cleanMessage.isNotEmpty &&
+        !cleanMessage.contains(fileName) &&
+        !cleanMessage.startsWith('📄 ');
 
     return Column(
-      crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: isMe
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
         Container(
           constraints: BoxConstraints(
@@ -825,8 +885,8 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
             color: isMe
                 ? Colors.white.withOpacity(0.15)
                 : (isDarkMode
-                    ? Colors.white.withOpacity(0.08)
-                    : Colors.black.withOpacity(0.05)),
+                      ? Colors.white.withOpacity(0.08)
+                      : Colors.black.withOpacity(0.05)),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
@@ -840,15 +900,13 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                   color: isMe
                       ? Colors.white.withOpacity(0.2)
                       : (isDarkMode
-                          ? AppTheme.primaryColor.withOpacity(0.2)
-                          : AppTheme.primaryColor.withOpacity(0.12)),
+                            ? AppTheme.primaryColor.withOpacity(0.2)
+                            : AppTheme.primaryColor.withOpacity(0.12)),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
                   Icons.insert_drive_file,
-                  color: isMe
-                      ? Colors.white
-                      : AppTheme.primaryColor,
+                  color: isMe ? Colors.white : AppTheme.primaryColor,
                   size: 22,
                 ),
               ),
@@ -865,8 +923,8 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                         color: isMe
                             ? Colors.white
                             : (isDarkMode
-                                ? AppTheme.darkTextPrimary
-                                : AppTheme.textPrimary),
+                                  ? AppTheme.darkTextPrimary
+                                  : AppTheme.textPrimary),
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         height: 1.2,
@@ -881,8 +939,8 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                         color: isMe
                             ? Colors.white70
                             : (isDarkMode
-                                ? AppTheme.darkTextSecondary
-                                : AppTheme.textSecondary),
+                                  ? AppTheme.darkTextSecondary
+                                  : AppTheme.textSecondary),
                         fontSize: 12,
                       ),
                     ),
@@ -908,9 +966,16 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
     );
   }
 
-  Widget _buildTextWithLinks(String text, bool isMe, bool isDarkMode, {Widget? trailing}) {
-    final urlRegex =
-        RegExp(r'https?://[^\s]+|www\.[^\s]+', caseSensitive: false);
+  Widget _buildTextWithLinks(
+    String text,
+    bool isMe,
+    bool isDarkMode, {
+    Widget? trailing,
+  }) {
+    final urlRegex = RegExp(
+      r'https?://[^\s]+|www\.[^\s]+',
+      caseSensitive: false,
+    );
     final matches = urlRegex.allMatches(text);
 
     final List<InlineSpan> spans = [];
@@ -927,58 +992,66 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
     if (matches.isEmpty) {
       spans.add(TextSpan(text: text, style: defaultStyle));
     } else {
+      for (final match in matches) {
+        if (match.start > currentIndex) {
+          spans.add(
+            TextSpan(
+              text: text.substring(currentIndex, match.start),
+              style: TextStyle(
+                color: isMe
+                    ? Colors.white
+                    : (isDarkMode
+                          ? AppTheme.darkTextPrimary
+                          : AppTheme.textPrimary),
+                fontSize: 16,
+                height: 1.3,
+              ),
+            ),
+          );
+        }
 
-    for (final match in matches) {
-      if (match.start > currentIndex) {
-        spans.add(TextSpan(
-          text: text.substring(currentIndex, match.start),
-          style: TextStyle(
-            color: isMe
-                ? Colors.white
-                : (isDarkMode
-                    ? AppTheme.darkTextPrimary
-                    : AppTheme.textPrimary),
-            fontSize: 16,
-            height: 1.3,
+        final url = match.group(0)!;
+        spans.add(
+          TextSpan(
+            text: url,
+            style: TextStyle(
+              color: isMe ? Colors.white : Colors.blue,
+              fontSize: 16,
+              height: 1.3,
+              decoration: TextDecoration.underline,
+            ),
+            recognizer: TapGestureRecognizer()..onTap = () => _launchURL(url),
           ),
-        ));
+        );
+
+        currentIndex = match.end;
       }
 
-      final url = match.group(0)!;
-      spans.add(TextSpan(
-        text: url,
-        style: TextStyle(
-          color: isMe ? Colors.white : Colors.blue,
-          fontSize: 16,
-          height: 1.3,
-          decoration: TextDecoration.underline,
-        ),
-        recognizer: TapGestureRecognizer()..onTap = () => _launchURL(url),
-      ));
-
-      currentIndex = match.end;
-    }
-
-    if (currentIndex < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(currentIndex),
-        style: defaultStyle,
-      ));
-    }
+      if (currentIndex < text.length) {
+        spans.add(
+          TextSpan(text: text.substring(currentIndex), style: defaultStyle),
+        );
+      }
     }
 
     if (trailing != null) {
       // Tambahkan spasi kecil dan widget timestamp di akhir baris teks
-      spans.add(WidgetSpan(
-        alignment: PlaceholderAlignment.middle, // Gunakan middle agar posisinya turun ke tengah baris
-        child: Transform.translate(
-          offset: const Offset(0, 2), // Tambahan sedikit ke bawah agar sejajar sempurna
-          child: Padding(
-            padding: const EdgeInsets.only(left: 8.0),
-            child: trailing,
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment
+              .middle, // Gunakan middle agar posisinya turun ke tengah baris
+          child: Transform.translate(
+            offset: const Offset(
+              0,
+              2,
+            ), // Tambahan sedikit ke bawah agar sejajar sempurna
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8.0),
+              child: trailing,
+            ),
           ),
         ),
-      ));
+      );
     }
 
     return RichText(text: TextSpan(children: spans));
@@ -1002,10 +1075,11 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
     final imageUrl = widget.message.imageUrl;
     String caption = widget.message.content;
     if (caption == '📷 Photo') caption = '';
-    
+
     final hasCaption = caption.isNotEmpty;
     final maxW = MediaQuery.of(context).size.width * 0.65; // 65% lebar layar
-    final maxH = 400.0; // tinggi maksimal dinaikkan agar foto potret tidak gepeng/terpotong
+    final maxH =
+        400.0; // tinggi maksimal dinaikkan agar foto potret tidak gepeng/terpotong
 
     Widget _buildErrorImage(bool isMe, bool isDarkMode) {
       return Container(
@@ -1017,15 +1091,18 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.broken_image,
-                size: 48,
-                color: isMe ? Colors.white70 : Colors.grey),
+            Icon(
+              Icons.broken_image,
+              size: 48,
+              color: isMe ? Colors.white70 : Colors.grey,
+            ),
             const SizedBox(height: 8),
             Text(
               'Failed to load image',
               style: TextStyle(
-                  color: isMe ? Colors.white70 : Colors.grey,
-                  fontSize: 12),
+                color: isMe ? Colors.white70 : Colors.grey,
+                fontSize: 12,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -1033,46 +1110,50 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
       );
     }
 
-    final hasLocalPath = widget.message.imagePath != null && 
-                         widget.message.imagePath!.isNotEmpty && 
-                         File(widget.message.imagePath!).existsSync();
+    final hasLocalPath =
+        widget.message.imagePath != null &&
+        widget.message.imagePath!.isNotEmpty &&
+        File(widget.message.imagePath!).existsSync();
 
     if ((imageUrl == null || imageUrl.isEmpty) && !hasLocalPath) {
       return IntrinsicWidth(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            width: 200,
-            height: 150,
-            decoration: BoxDecoration(
-              color: isMe
-                  ? Colors.white.withOpacity(0.2)
-                  : (isDarkMode ? Colors.grey[800] : Colors.grey.shade200),
-              borderRadius: BorderRadius.circular(8),
+          children: [
+            Container(
+              width: 200,
+              height: 150,
+              decoration: BoxDecoration(
+                color: isMe
+                    ? Colors.white.withOpacity(0.2)
+                    : (isDarkMode ? Colors.grey[800] : Colors.grey.shade200),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.broken_image,
+                    size: 48,
+                    color: isMe ? Colors.white70 : Colors.grey,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Image not available',
+                    style: TextStyle(
+                      color: isMe ? Colors.white70 : Colors.grey,
+                      fontSize: 12,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.broken_image,
-                    size: 48, color: isMe ? Colors.white70 : Colors.grey),
-                const SizedBox(height: 8),
-                Text(
-                  'Image not available',
-                  style: TextStyle(
-                      color: isMe ? Colors.white70 : Colors.grey, fontSize: 12),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [_buildTimestampRow(isMe)],
             ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              _buildTimestampRow(isMe),
-            ],
-          ),
-        ],
+          ],
         ),
       );
     }
@@ -1080,46 +1161,49 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
     return IntrinsicWidth(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: GestureDetector(
-            onTap: () async {
-              FocusManager.instance.primaryFocus?.unfocus();
-              await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => ImageViewerScreen(
-                    imageUrl: (imageUrl != null && imageUrl.isNotEmpty) 
-                                ? imageUrl 
-                                : widget.message.imagePath,
-                    caption: hasCaption ? caption : null,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: GestureDetector(
+              onTap: () async {
+                FocusManager.instance.primaryFocus?.unfocus();
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => ImageViewerScreen(
+                      imageUrl: (imageUrl != null && imageUrl.isNotEmpty)
+                          ? imageUrl
+                          : widget.message.imagePath,
+                      caption: hasCaption ? caption : null,
+                    ),
                   ),
-                ),
-              );
-              FocusManager.instance.primaryFocus?.unfocus();
-            },
-            child: Hero(
-              tag: imageUrl ?? widget.message.imagePath ?? 'image_${widget.message.id}',
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: maxW,
-                  maxHeight: maxH,
-                ),
-                child: Builder(
-                  builder: (context) {
-                    final hasLocalPath = widget.message.imagePath != null && 
-                                           widget.message.imagePath!.isNotEmpty && 
-                                           File(widget.message.imagePath!).existsSync();
-                      
+                );
+                FocusManager.instance.primaryFocus?.unfocus();
+              },
+              child: Hero(
+                tag:
+                    imageUrl ??
+                    widget.message.imagePath ??
+                    'image_${widget.message.id}',
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
+                  child: Builder(
+                    builder: (context) {
+                      final hasLocalPath =
+                          widget.message.imagePath != null &&
+                          widget.message.imagePath!.isNotEmpty &&
+                          File(widget.message.imagePath!).existsSync();
+
                       if (hasLocalPath) {
                         return Image.file(
                           File(widget.message.imagePath!),
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => _buildErrorImage(isMe, isDarkMode),
+                          errorBuilder: (context, error, stackTrace) =>
+                              _buildErrorImage(isMe, isDarkMode),
                         );
                       }
-                      
-                      final pixelRatio = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 2.0;
+
+                      final pixelRatio =
+                          MediaQuery.maybeOf(context)?.devicePixelRatio ?? 2.0;
                       final memW = (maxW * pixelRatio).round().clamp(100, 800);
                       return CachedNetworkImage(
                         imageUrl: imageUrl ?? '',
@@ -1133,46 +1217,45 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                             child: CircularProgressIndicator(strokeWidth: 2),
                           ),
                         ),
-                        errorWidget: (context, url, error) => _buildErrorImage(isMe, isDarkMode),
+                        errorWidget: (context, url, error) =>
+                            _buildErrorImage(isMe, isDarkMode),
                       );
-                    }
+                    },
                   ),
                 ),
               ),
             ),
           ),
-        if (hasCaption) ...[
-          const SizedBox(height: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            constraints: BoxConstraints(
-              maxWidth: maxW,
-            ),
-            child: Text(
-              _cleanContent(caption),
-              style: TextStyle(
-                color: isMe
-                    ? Colors.white
-                    : (isDarkMode
-                        ? AppTheme.darkTextPrimary
-                        : AppTheme.textPrimary),
-                fontSize: 14,
-                height: 1.3,
+          if (hasCaption) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              constraints: BoxConstraints(maxWidth: maxW),
+              child: Text(
+                _cleanContent(caption),
+                style: TextStyle(
+                  color: isMe
+                      ? Colors.white
+                      : (isDarkMode
+                            ? AppTheme.darkTextPrimary
+                            : AppTheme.textPrimary),
+                  fontSize: 14,
+                  height: 1.3,
+                ),
               ),
             ),
+          ],
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 4.0, bottom: 2.0),
+                child: _buildTimestampRow(isMe),
+              ),
+            ],
           ),
         ],
-        const SizedBox(height: 4),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(right: 4.0, bottom: 2.0),
-              child: _buildTimestampRow(isMe),
-            ),
-          ],
-        ),
-      ],
       ),
     );
   }
@@ -1180,11 +1263,16 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
   Widget _buildVideoMessage(BuildContext context, bool isMe, bool isDarkMode) {
     // Read from both imageUrl (locally sent) and videoUrl (server received)
     final videoUrl = widget.message.imageUrl ?? widget.message.videoUrl ?? '';
-    final isSticker = _isStickerMessage(widget.message) || videoUrl.toLowerCase().contains('.webm') || videoUrl.toLowerCase().contains('.tgs') || videoUrl.toLowerCase().contains('.webp') || widget.message.content.toLowerCase().contains('animated sticker');
+    final isSticker =
+        _isStickerMessage(widget.message) ||
+        videoUrl.toLowerCase().contains('.webm') ||
+        videoUrl.toLowerCase().contains('.tgs') ||
+        videoUrl.toLowerCase().contains('.webp') ||
+        widget.message.content.toLowerCase().contains('animated sticker');
     if (isSticker) {
       return _buildStickerMessage(isMe, isDarkMode);
     }
-    
+
     final caption = widget.message.content
         .replaceAll('📹 Video', '')
         .replaceAll('🎥 Video', '')
@@ -1196,9 +1284,10 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
     final maxWidth = MediaQuery.of(context).size.width * 0.7;
     final fixedHeight = maxWidth * 9 / 16; // Enforce 16:9 ratio
 
-
     return Column(
-      crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: isMe
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
         GestureDetector(
           onTap: () async {
@@ -1229,10 +1318,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.grey.shade800,
-                          Colors.grey.shade900,
-                        ],
+                        colors: [Colors.grey.shade800, Colors.grey.shade900],
                       ),
                     ),
                   ),
@@ -1274,7 +1360,10 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                     left: 10,
                     bottom: 10,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.7),
                         borderRadius: BorderRadius.circular(16),
@@ -1294,7 +1383,10 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                     right: 10,
                     bottom: 10,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.7),
                         borderRadius: BorderRadius.circular(16),
@@ -1302,7 +1394,11 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(isSticker ? Icons.animation : Icons.movie, color: Colors.white, size: 14),
+                          Icon(
+                            isSticker ? Icons.animation : Icons.movie,
+                            color: Colors.white,
+                            size: 14,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             isSticker ? 'Sticker' : 'Video',
@@ -1326,13 +1422,15 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
           const SizedBox(height: 6),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            constraints: BoxConstraints(
-              maxWidth: maxWidth,
-            ),
+            constraints: BoxConstraints(maxWidth: maxWidth),
             child: Text(
               _cleanContent(caption),
               style: TextStyle(
-                color: isMe ? Colors.white : (isDarkMode ? AppTheme.darkTextPrimary : AppTheme.textPrimary),
+                color: isMe
+                    ? Colors.white
+                    : (isDarkMode
+                          ? AppTheme.darkTextPrimary
+                          : AppTheme.textPrimary),
                 fontSize: 14,
                 height: 1.3,
               ),
@@ -1350,8 +1448,9 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
 
     if (audioUrl == null || audioUrl.isEmpty) {
       return Column(
-        crossAxisAlignment:
-            isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment: isMe
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
           Container(
             width: 280,
@@ -1389,8 +1488,9 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
     }
 
     return Column(
-      crossAxisAlignment:
-          isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: isMe
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
         AudioPlayerWidget(
           key: ValueKey('audio_${audioUrl.split('?').first.split('/').last}'),
@@ -1415,9 +1515,12 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
     double? latitude;
     double? longitude;
     String? mapsUrl;
-    String? address;
 
-    final locationRegex = RegExp(r'Location:\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)', caseSensitive: false);
+    // Parsing koordinat dari teks pesan
+    final locationRegex = RegExp(
+      r'Location:\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)',
+      caseSensitive: false,
+    );
     final match = locationRegex.firstMatch(messageText);
 
     if (match != null) {
@@ -1429,12 +1532,6 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
         latitude = double.tryParse(parts[0].trim());
         longitude = double.tryParse(parts[1].trim());
       }
-      if (parts.length >= 3) {
-        final rawAddr = parts[2].trim();
-        if (rawAddr.isNotEmpty && rawAddr != '-') {
-          address = rawAddr;
-        }
-      }
     } else {
       final coordRegex = RegExp(r'(?:query|q)=(-?\d+\.?\d*),(-?\d+\.?\d*)');
       final coordMatch = coordRegex.firstMatch(messageText);
@@ -1444,192 +1541,159 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
       }
     }
 
-    final urlRegex = RegExp(r'https?:\/\/(?:www\.)?(?:google\.com\/maps[^\s]+|maps\.google\.com[^\s]+|maps\.app\.goo\.gl[^\s]+)');
+    final urlRegex = RegExp(
+      r'https?:\/\/(?:www\.)?(?:google\.com\/maps[^\s]+|maps\.google\.com[^\s]+|maps\.app\.goo\.gl[^\s]+)',
+    );
     final urlMatch = urlRegex.firstMatch(messageText);
     if (urlMatch != null) {
       mapsUrl = urlMatch.group(0);
     }
 
+    final targetLat = latitude ?? -6.2088;
+    final targetLng = longitude ?? 106.8456;
+    final targetUrl =
+        mapsUrl ??
+        'https://www.google.com/maps/search/?api=1&query=$targetLat,$targetLng';
+
+    // Dapatkan nama user/agent
+    final chatSettings = context.watch<ChatSettingsProvider>();
+    final displayTime = DateTimeHelper.formatTime(
+      widget.message.rawTime,
+      chatSettings.timeFormat,
+      fallback: widget.message.time,
+    );
+
     return Column(
-      crossAxisAlignment:
-          isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: isMe
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
+        // ── Kartu Preview Peta Visual ──
         GestureDetector(
-          onTap: () {
-            if (mapsUrl != null) {
-              _openInMaps(mapsUrl);
-            } else if (latitude != null && longitude != null) {
-              final url = 'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
-              _openInMaps(url);
-            }
-          },
+          onTap: () => _openInMaps(targetUrl),
           child: Container(
-            width: 280,
-            padding: const EdgeInsets.all(12),
+            width: 230,
+            height: 200,
             decoration: BoxDecoration(
-              color: isMe
-                  ? Colors.white.withOpacity(0.2)
-                  : (isDarkMode ? Colors.grey[800] : Colors.grey.shade100),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isMe
-                    ? Colors.white.withOpacity(0.3)
-                    : Colors.grey.withOpacity(0.3),
-                width: 1,
+                color: isDarkMode
+                    ? const Color(0xFF2C3E50)
+                    : Colors.grey.shade300,
+                width: 2.5,
               ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.location_on,
-                      size: 20,
-                      color: isMe ? Colors.white : AppTheme.primaryColor,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Location',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: isMe
-                            ? Colors.white
-                            : (isDarkMode
-                                ? AppTheme.darkTextPrimary
-                                : AppTheme.textPrimary),
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-                if (address != null && address.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    address,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: isMe
-                          ? Colors.white
-                          : (isDarkMode
-                              ? AppTheme.darkTextPrimary
-                              : AppTheme.textPrimary),
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    color: isMe
-                        ? Colors.white.withOpacity(0.1)
-                        : (isDarkMode
-                            ? Colors.grey[800]
-                            : Colors.grey.shade200),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isMe
-                          ? Colors.white.withOpacity(0.2)
-                          : Colors.grey.withOpacity(0.2),
-                      width: 1,
-                    ),
-                  ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Icon(
-                        Icons.map,
-                        size: 48,
-                        color: isMe ? Colors.white70 : AppTheme.textSecondary,
-                      ),
-                      Positioned(
-                        bottom: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Text(
-                            'Tap to open in Maps',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (latitude != null && longitude != null)
-                  Text(
-                    'Lat: ${latitude.toStringAsFixed(6)}, Lng: ${longitude.toStringAsFixed(6)}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isMe ? Colors.white70 : AppTheme.textSecondary,
-                      fontFamily: 'monospace',
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isMe
-                        ? Colors.white.withOpacity(0.2)
-                        : AppTheme.primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isMe
-                          ? Colors.white.withOpacity(0.3)
-                          : AppTheme.primaryColor.withOpacity(0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.open_in_new,
-                        size: 16,
-                        color: isMe ? Colors.white : AppTheme.primaryColor,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Open in Google Maps',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: isMe ? Colors.white : AppTheme.primaryColor,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(isDarkMode ? 0.4 : 0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
                 ),
               ],
             ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(13.5),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Komponen FlutterMap visual
+                  IgnorePointer(
+                    ignoring:
+                        true, // Non-aktifkan gesture agar tidak mengganggu scroll chat
+                    child: FlutterMap(
+                      options: MapOptions(
+                        initialCenter: LatLng(targetLat, targetLng),
+                        initialZoom: 15.0,
+                        interactionOptions: const InteractionOptions(
+                          flags: InteractiveFlag.none,
+                        ),
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'ai.nobox.android',
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Pin Lokasi Merah Besar di Tengah Peta
+                  Positioned(
+                    bottom: 95, // Pas di tengah sumbu pin
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.location_on,
+                          size: 46,
+                          color: Colors.red.shade600,
+                          shadows: const [
+                            Shadow(
+                              blurRadius: 8,
+                              color: Colors.black45,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          width: 8,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.black38,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
-        const SizedBox(height: 4),
-        _buildTimestampRow(isMe),
+
+        const SizedBox(height: 6),
+
+        // ── Baris Informasi Pengirim & Waktu (Me (name) • time • ✔) ──
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: isMe
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
+            children: [
+              if (!isMe)
+                Text(
+                  widget.message.fromId ?? 'User',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: isDarkMode
+                        ? Colors.grey.shade400
+                        : Colors.grey.shade600,
+                  ),
+                ),
+              Text(
+                isMe ? displayTime : ' • $displayTime',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isDarkMode
+                      ? Colors.grey.shade400
+                      : Colors.grey.shade600,
+                ),
+              ),
+              if (isMe) ...[const SizedBox(width: 4), _buildAckIcon()],
+            ],
+          ),
+        ),
       ],
     );
   }
 
   void _openInMaps(String url) {
     try {
-      launchUrl(
-        Uri.parse(url),
-        mode: LaunchMode.externalApplication,
-      );
+      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     } catch (e) {
       debugPrint('Failed to open maps: $e');
     }
@@ -1666,11 +1730,7 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
         break;
     }
 
-    return Icon(
-      icon,
-      size: 14,
-      color: color,
-    );
+    return Icon(icon, size: 14, color: color);
   }
 }
 
@@ -1729,7 +1789,7 @@ class _VideoThumbnailWidgetState extends State<_VideoThumbnailWidget> {
         ),
       );
     }
-    
+
     if (_thumbnailData != null) {
       return Image.memory(
         _thumbnailData!,
@@ -1738,16 +1798,12 @@ class _VideoThumbnailWidgetState extends State<_VideoThumbnailWidget> {
         height: double.infinity,
       );
     }
-    
+
     // Fallback if thumbnail generation fails
     return Container(
       color: Colors.grey.shade800,
       child: const Center(
-        child: Icon(
-          Icons.broken_image,
-          size: 48,
-          color: Colors.white54,
-        ),
+        child: Icon(Icons.broken_image, size: 48, color: Colors.white54),
       ),
     );
   }
@@ -1771,14 +1827,16 @@ class _AnimatedVideoStickerState extends State<AnimatedVideoSticker> {
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
       ..setVolume(0.0)
       ..setLooping(true)
-      ..initialize().then((_) {
-        if (mounted) {
-          setState(() {
-            _isInitialized = true;
-          });
-          _controller.play();
-        }
-      }).catchError((_) {});
+      ..initialize()
+          .then((_) {
+            if (mounted) {
+              setState(() {
+                _isInitialized = true;
+              });
+              _controller.play();
+            }
+          })
+          .catchError((_) {});
   }
 
   @override
@@ -1793,16 +1851,16 @@ class _AnimatedVideoStickerState extends State<AnimatedVideoSticker> {
       return const SizedBox(
         width: 120,
         height: 120,
-        child: Center(
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
       );
     }
     return SizedBox(
       width: 160,
       height: 160,
       child: AspectRatio(
-        aspectRatio: _controller.value.aspectRatio > 0 ? _controller.value.aspectRatio : 1.0,
+        aspectRatio: _controller.value.aspectRatio > 0
+            ? _controller.value.aspectRatio
+            : 1.0,
         child: VideoPlayer(_controller),
       ),
     );

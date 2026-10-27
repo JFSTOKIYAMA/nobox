@@ -27,7 +27,7 @@ class _EditContactPageState extends State<EditContactPage> {
   late TextEditingController _nameController;
   late TextEditingController _addressController;
   late TextEditingController _postalCodeController;
-  
+
   File? _profileImage;
   String? _currentAvatarUrl;
   final ImagePicker _imagePicker = ImagePicker();
@@ -51,7 +51,8 @@ class _EditContactPageState extends State<EditContactPage> {
   // Overlay state for category
   final GlobalKey _categoryKey = GlobalKey();
   OverlayEntry? _categoryOverlayEntry;
-  final TextEditingController _categorySearchController = TextEditingController();
+  final TextEditingController _categorySearchController =
+      TextEditingController();
   List<String> _filteredCategories = [];
 
   // Overlay state for location details
@@ -60,39 +61,43 @@ class _EditContactPageState extends State<EditContactPage> {
   final GlobalKey _cityKey = GlobalKey();
   OverlayEntry? _locationOverlayEntry;
   GlobalKey? _activeLocationKey;
-  final TextEditingController _locationSearchController = TextEditingController();
+  final TextEditingController _locationSearchController =
+      TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _filteredCategories = _categories;
     _currentAvatarUrl = widget.chat.avatarUrl;
-    _nameController = TextEditingController(text: widget.chat.sender);
+    final savedName = Provider.of<ChatProvider>(
+      context,
+      listen: false,
+    ).getSavedContactName(widget.chat.id);
+    _nameController = TextEditingController(
+      text: savedName ?? widget.chat.sender,
+    );
     _addressController = TextEditingController();
     _postalCodeController = TextEditingController();
     _initializeData();
   }
 
   Future<void> _initializeData() async {
-    await Future.wait([
-      _loadCountries(),
-      _loadContactData(),
-    ]);
-    
+    await Future.wait([_loadCountries(), _loadContactData()]);
+
     // FIX: Resolusi otomatis ISO Code berdasarkan nama Negara & Provinsi.
     // Tanpa ini, pengguna tidak bisa klik dropdown City (karena _selectedStateCode masih null).
     if (_selectedCountryName != null && _countries.isNotEmpty) {
       try {
         final country = _countries.firstWhere(
-          (c) => c.name.toLowerCase() == _selectedCountryName!.toLowerCase()
+          (c) => c.name.toLowerCase() == _selectedCountryName!.toLowerCase(),
         );
         _selectedCountryCode = country.isoCode;
-        
+
         if (_selectedStateName != null) {
           await _loadStates(country.isoCode);
           try {
             final state = _states.firstWhere(
-              (s) => s.name.toLowerCase() == _selectedStateName!.toLowerCase()
+              (s) => s.name.toLowerCase() == _selectedStateName!.toLowerCase(),
             );
             _selectedStateCode = state.isoCode;
 
@@ -121,32 +126,58 @@ class _EditContactPageState extends State<EditContactPage> {
       if (data != null && mounted) {
         // Data ada di data['Data']['Room'] dan data['Data']['ContactReal']
         final room = data['Data']?['Room'] ?? data;
-        final contact = data['Data']?['ContactReal'] ?? data['Data']?['Contact'] ?? data;
+        final contact =
+            data['Data']?['ContactReal'] ?? data['Data']?['Contact'] ?? data;
 
         setState(() {
-          // Pre-fill nama dari room
-          final serverName = room['CtRealNm']?.toString() ?? room['CtTmp']?.toString() ?? contact['Name']?.toString() ?? contact['Nm']?.toString();
-          if (serverName != null && serverName.isNotEmpty) {
-            _nameController.text = serverName;
+          // Optimistic name check: prioritaskan nama yang sudah disimpan secara lokal.
+          final localName = chatProvider.getSavedContactName(widget.chat.id);
+          if (localName != null && localName.isNotEmpty) {
+            _nameController.text = localName;
+          } else {
+            // Pre-fill nama dari room
+            final serverName =
+                room['CtRealNm']?.toString() ??
+                room['CtTmp']?.toString() ??
+                contact['Name']?.toString() ??
+                contact['Nm']?.toString();
+            if (serverName != null && serverName.isNotEmpty) {
+              _nameController.text = serverName;
+            }
           }
 
           // Pre-fill data lokasi dari contact (server)
           final address = contact['Address']?.toString() ?? '';
           if (address.isNotEmpty) _addressController.text = address;
 
-          final postalCode = contact['Postal']?.toString() ?? contact['PostalCode']?.toString() ?? '';
+          final postalCode =
+              contact['Postal']?.toString() ??
+              contact['PostalCode']?.toString() ??
+              '';
           if (postalCode.isNotEmpty) _postalCodeController.text = postalCode;
 
-          final country = contact['Country']?.toString() ?? contact['Cntry']?.toString() ?? '';
+          final country =
+              contact['Country']?.toString() ??
+              contact['Cntry']?.toString() ??
+              '';
           if (country.isNotEmpty) _selectedCountryName = country;
 
-          final state = contact['State']?.toString() ?? contact['Stt']?.toString() ?? contact['Province']?.toString() ?? '';
+          final state =
+              contact['State']?.toString() ??
+              contact['Stt']?.toString() ??
+              contact['Province']?.toString() ??
+              '';
           if (state.isNotEmpty) _selectedStateName = state;
 
-          final city = contact['City']?.toString() ?? contact['Cty']?.toString() ?? '';
+          final city =
+              contact['City']?.toString() ?? contact['Cty']?.toString() ?? '';
           if (city.isNotEmpty) _selectedCityName = city;
 
-          final photo = contact['Photo']?.toString() ?? room['CtImg']?.toString() ?? room['LinkImg']?.toString() ?? '';
+          final photo =
+              contact['Photo']?.toString() ??
+              room['CtImg']?.toString() ??
+              room['LinkImg']?.toString() ??
+              '';
           if (photo.isNotEmpty) {
             if (photo.startsWith('http')) {
               _currentAvatarUrl = photo;
@@ -156,21 +187,28 @@ class _EditContactPageState extends State<EditContactPage> {
           }
 
           // Override: gunakan data lokasi lokal (optimistic save) jika ada
-          final localLocation = chatProvider.getSavedContactLocation(widget.chat.id);
+          final localLocation = chatProvider.getSavedContactLocation(
+            widget.chat.id,
+          );
           if (localLocation != null) {
-            if (localLocation['Address'] != null && localLocation['Address']!.isNotEmpty) {
+            if (localLocation['Address'] != null &&
+                localLocation['Address']!.isNotEmpty) {
               _addressController.text = localLocation['Address']!;
             }
-            if (localLocation['Postal'] != null && localLocation['Postal']!.isNotEmpty) {
+            if (localLocation['Postal'] != null &&
+                localLocation['Postal']!.isNotEmpty) {
               _postalCodeController.text = localLocation['Postal']!;
             }
-            if (localLocation['Country'] != null && localLocation['Country']!.isNotEmpty) {
+            if (localLocation['Country'] != null &&
+                localLocation['Country']!.isNotEmpty) {
               _selectedCountryName = localLocation['Country']!;
             }
-            if (localLocation['State'] != null && localLocation['State']!.isNotEmpty) {
+            if (localLocation['State'] != null &&
+                localLocation['State']!.isNotEmpty) {
               _selectedStateName = localLocation['State']!;
             }
-            if (localLocation['City'] != null && localLocation['City']!.isNotEmpty) {
+            if (localLocation['City'] != null &&
+                localLocation['City']!.isNotEmpty) {
               _selectedCityName = localLocation['City']!;
             }
           }
@@ -180,14 +218,21 @@ class _EditContactPageState extends State<EditContactPage> {
       } else {
         // Server data kosong, coba dari lokal
         final chatProvider2 = Provider.of<ChatProvider>(context, listen: false);
-        final localLocation = chatProvider2.getSavedContactLocation(widget.chat.id);
+        final localLocation = chatProvider2.getSavedContactLocation(
+          widget.chat.id,
+        );
         if (localLocation != null && mounted) {
           setState(() {
-            if (localLocation['Address'] != null) _addressController.text = localLocation['Address']!;
-            if (localLocation['Postal'] != null) _postalCodeController.text = localLocation['Postal']!;
-            if (localLocation['Country'] != null) _selectedCountryName = localLocation['Country'];
-            if (localLocation['State'] != null) _selectedStateName = localLocation['State'];
-            if (localLocation['City'] != null) _selectedCityName = localLocation['City'];
+            if (localLocation['Address'] != null)
+              _addressController.text = localLocation['Address']!;
+            if (localLocation['Postal'] != null)
+              _postalCodeController.text = localLocation['Postal']!;
+            if (localLocation['Country'] != null)
+              _selectedCountryName = localLocation['Country'];
+            if (localLocation['State'] != null)
+              _selectedStateName = localLocation['State'];
+            if (localLocation['City'] != null)
+              _selectedCityName = localLocation['City'];
           });
         }
         if (mounted) setState(() => _isLoadingContact = false);
@@ -197,14 +242,21 @@ class _EditContactPageState extends State<EditContactPage> {
       // Fallback ke lokal jika terjadi error
       try {
         final chatProvider = Provider.of<ChatProvider>(context, listen: false);
-        final localLocation = chatProvider.getSavedContactLocation(widget.chat.id);
+        final localLocation = chatProvider.getSavedContactLocation(
+          widget.chat.id,
+        );
         if (localLocation != null && mounted) {
           setState(() {
-            if (localLocation['Address'] != null) _addressController.text = localLocation['Address']!;
-            if (localLocation['Postal'] != null) _postalCodeController.text = localLocation['Postal']!;
-            if (localLocation['Country'] != null) _selectedCountryName = localLocation['Country'];
-            if (localLocation['State'] != null) _selectedStateName = localLocation['State'];
-            if (localLocation['City'] != null) _selectedCityName = localLocation['City'];
+            if (localLocation['Address'] != null)
+              _addressController.text = localLocation['Address']!;
+            if (localLocation['Postal'] != null)
+              _postalCodeController.text = localLocation['Postal']!;
+            if (localLocation['Country'] != null)
+              _selectedCountryName = localLocation['Country'];
+            if (localLocation['State'] != null)
+              _selectedStateName = localLocation['State'];
+            if (localLocation['City'] != null)
+              _selectedCityName = localLocation['City'];
           });
         }
       } catch (_) {}
@@ -253,7 +305,9 @@ class _EditContactPageState extends State<EditContactPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final initial = widget.chat.sender.isNotEmpty ? widget.chat.sender[0].toUpperCase() : '?';
+    final initial = widget.chat.sender.isNotEmpty
+        ? widget.chat.sender[0].toUpperCase()
+        : '?';
 
     return GestureDetector(
       onTap: () {
@@ -263,412 +317,496 @@ class _EditContactPageState extends State<EditContactPage> {
       },
       behavior: HitTestBehavior.translucent,
       child: Scaffold(
-        backgroundColor: isDark ? const Color(0xFF0B141A) : const Color(0xFFF5F8FA),
+        backgroundColor: isDark
+            ? const Color(0xFF0B141A)
+            : const Color(0xFFF5F8FA),
         appBar: AppBar(
           backgroundColor: isDark ? const Color(0xFF1F2C34) : Colors.blue,
           foregroundColor: Colors.white,
-          title: const Text('Edit Contact', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+          title: const Text(
+            'Edit Contact',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
           centerTitle: false,
-        actions: [
-          // [ACTION: EDIT_CONTACT_INFO] - Eksekusi penyimpanan data profil kontak
-          TextButton.icon(
-            onPressed: () async {
-              // Build the update payload
-              final contactData = <String, dynamic>{
-                "CtRealNm": _nameController.text.trim(),
-              };
-              if (_addressController.text.trim().isNotEmpty) {
-                contactData["Address"] = _addressController.text.trim();
-              }
-              if (_postalCodeController.text.trim().isNotEmpty) {
-                contactData["Postal"] = _postalCodeController.text.trim();
-              }
-              if (_selectedCountryName != null) {
-                contactData["Country"] = _selectedCountryName;
-              }
-              if (_selectedStateName != null) {
-                contactData["State"] = _selectedStateName;
-              }
-              if (_selectedCityName != null) {
-                contactData["City"] = _selectedCityName;
-              }
-              
-              // Show loading
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Saving contact...')),
-              );
-              
-              final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+          actions: [
+            // [ACTION: EDIT_CONTACT_INFO] - Eksekusi penyimpanan data profil kontak
+            TextButton.icon(
+              onPressed: () async {
+                // Build the update payload
+                final contactData = <String, dynamic>{
+                  "CtRealNm": _nameController.text.trim(),
+                };
+                if (_addressController.text.trim().isNotEmpty) {
+                  contactData["Address"] = _addressController.text.trim();
+                }
+                if (_postalCodeController.text.trim().isNotEmpty) {
+                  contactData["Postal"] = _postalCodeController.text.trim();
+                }
+                if (_selectedCountryName != null) {
+                  contactData["Country"] = _selectedCountryName;
+                }
+                if (_selectedStateName != null) {
+                  contactData["State"] = _selectedStateName;
+                }
+                if (_selectedCityName != null) {
+                  contactData["City"] = _selectedCityName;
+                }
 
-              if (_profileImage != null) {
-                final imageUrl = await chatProvider.uploadImage(_profileImage!);
-                if (imageUrl != null) {
-                  contactData["Photo"] = imageUrl;
+                // Show loading
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Saving contact...')),
+                );
+
+                final chatProvider = Provider.of<ChatProvider>(
+                  context,
+                  listen: false,
+                );
+
+                if (_profileImage != null) {
+                  final imageUrl = await chatProvider.uploadImage(
+                    _profileImage!,
+                  );
+                  if (imageUrl != null) {
+                    contactData["Photo"] = imageUrl;
+                  } else {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Failed to upload image: ${chatProvider.error ?? "Unknown error"}',
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                }
+
+                final success = await chatProvider.updateContactInfo(
+                  widget.chat.id,
+                  contactData,
+                );
+
+                if (success) {
+                  if (mounted) {
+                    Navigator.pop(context, true);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Contact saved successfully!'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
                 } else {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('Failed to upload image: ${chatProvider.error ?? "Unknown error"}'),
+                        content: Text(
+                          'Failed to save: ${chatProvider.error ?? "Unknown error"}',
+                        ),
                         backgroundColor: Colors.red,
                       ),
                     );
                   }
-                  return;
                 }
-              }
-
-              final success = await chatProvider.updateContactInfo(widget.chat.id, contactData);
-              
-              if (success) {
-                if (mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Contact saved successfully!'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              } else {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Failed to save: ${chatProvider.error ?? "Unknown error"}'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            icon: const Icon(Icons.check, color: Colors.white, size: 20),
-            label: const Text('Save', style: TextStyle(color: Colors.white, fontSize: 16)),
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            // ── Avatar Section ──
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1F2C34) : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                    GestureDetector(
-                      onTap: () => _showChangePhotoBottomSheet(isDark),
-                      child: Stack(
-                        children: [
-                          CircleAvatar(
-                            radius: 48,
-                            backgroundColor: Colors.blue.shade400,
-                            backgroundImage: _profileImage != null 
-                                ? FileImage(_profileImage!) as ImageProvider
-                                : (_currentAvatarUrl != null && _currentAvatarUrl!.isNotEmpty 
-                                    ? CachedNetworkImageProvider(_currentAvatarUrl!) as ImageProvider 
-                                    : null),
-                            child: _profileImage == null && (_currentAvatarUrl == null || _currentAvatarUrl!.isEmpty)
-                                ? Text(
-                                    initial,
-                                    style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: Colors.white),
-                                  )
-                                : null,
-                          ),
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: Colors.blue,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 2),
-                              ),
-                              child: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Contact Information',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-                  ),
-                ],
+              },
+              icon: const Icon(Icons.check, color: Colors.white, size: 20),
+              label: const Text(
+                'Save',
+                style: TextStyle(color: Colors.white, fontSize: 16),
               ),
             ),
-
-            const SizedBox(height: 16),
-
-            // ── Basic Information Section ──
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1F2C34) : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.person_outline, color: Colors.blue, size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Basic Information',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  _buildLabel('Full Name', isDark),
-                  const SizedBox(height: 8),
-                  _buildTextField(
-                    controller: _nameController,
-                    icon: Icons.person_outline,
-                    hintText: 'Enter full name',
-                    isDark: isDark,
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  _buildLabel('Category', isDark),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: () {
-                      if (_categoryOverlayEntry != null) {
-                        _removeCategoryOverlay();
-                      } else {
-                        _showCategoryOverlay();
-                      }
-                    },
-                    child: Container(
-                      key: _categoryKey,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF121B22) : const Color(0xFFFAFAFA),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: _categoryOverlayEntry != null 
-                              ? Colors.blue.shade600 
-                              : (isDark ? Colors.grey.shade800 : Colors.grey.shade300),
-                          width: _categoryOverlayEntry != null ? 1.5 : 1.0,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.category, color: Colors.grey.shade400, size: 20),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Text(
-                              _selectedCategory.isEmpty ? 'Select category' : _selectedCategory,
-                              style: TextStyle(
-                                color: _selectedCategory.isEmpty 
-                                    ? Colors.grey.shade400 
-                                    : (isDark ? Colors.white : Colors.black87),
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                          Icon(
-                            _categoryOverlayEntry != null ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, 
-                            color: Colors.grey.shade500,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // ── Location Details Section ──
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1F2C34) : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.location_on_outlined, color: Colors.blue, size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Location Details',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  _buildLabel('Street Address', isDark),
-                  const SizedBox(height: 8),
-                  _buildTextField(
-                    controller: _addressController,
-                    icon: Icons.home_outlined,
-                    hintText: 'Enter full address',
-                    isDark: isDark,
-                    maxLines: 3,
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  _buildLabel('Postal Code', isDark),
-                  const SizedBox(height: 8),
-                  _buildTextField(
-                    controller: _postalCodeController,
-                    icon: Icons.markunread_mailbox_outlined,
-                    hintText: 'Enter postal code',
-                    isDark: isDark,
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // ── Country Picker ──
-                  _buildLabel('Country', isDark),
-                  const SizedBox(height: 8),
-                  _buildSearchableSelector(
-                    widgetKey: _countryKey,
-                    icon: Icons.public,
-                    value: _selectedCountryName,
-                    hintText: _isLoadingCountries ? 'Loading countries...' : 'Select a country',
-                    isDark: isDark,
-                    onTap: _isLoadingCountries ? null : () => _showCountryPicker(isDark),
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // ── State Picker ──
-                  _buildLabel('State / Province', isDark),
-                  const SizedBox(height: 8),
-                  _buildSearchableSelector(
-                    widgetKey: _stateKey,
-                    icon: Icons.map_outlined,
-                    value: _selectedStateName,
-                    hintText: _selectedCountryName == null ? 'Select country first' : 'Select a state',
-                    isDark: isDark,
-                    onTap: _selectedCountryCode == null ? null : () => _showStatePicker(isDark),
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // ── City Picker ──
-                  _buildLabel('City', isDark),
-                  const SizedBox(height: 8),
-                  _buildSearchableSelector(
-                    widgetKey: _cityKey,
-                    icon: Icons.location_city,
-                    value: _selectedCityName,
-                    hintText: _selectedStateName == null ? 'Select state first' : 'Select a city',
-                    isDark: isDark,
-                    onTap: _selectedStateCode == null ? null : () => _showCityPicker(isDark),
-                  ),
-                ],
-              ),
-            ),
-            
-            const SizedBox(height: 16),
-            
-            // ── Info Box ──
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue.withOpacity(0.2)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, color: Colors.blue.shade600, size: 20),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Changes will be saved to the contact record',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.blueGrey,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            const SizedBox(height: 32),
           ],
         ),
-      ),
-          // Loading overlay saat data contact sedang dimuat
-          if (_isLoadingContact)
-            Positioned.fill(
-              child: Container(
-                color: isDark ? Colors.black54 : Colors.white70,
-                child: const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(color: Colors.blue),
-                      SizedBox(height: 16),
-                      Text(
-                        'Loading contact data...',
-                        style: TextStyle(color: Colors.blueGrey, fontSize: 14),
-                      ),
-                    ],
+        body: Stack(
+          children: [
+            SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  // ── Avatar Section ──
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1F2C34) : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      children: [
+                        GestureDetector(
+                          onTap: () => _showChangePhotoBottomSheet(isDark),
+                          child: Stack(
+                            children: [
+                              CircleAvatar(
+                                radius: 48,
+                                backgroundColor: Colors.blue.shade400,
+                                backgroundImage: _profileImage != null
+                                    ? FileImage(_profileImage!) as ImageProvider
+                                    : (_currentAvatarUrl != null &&
+                                              _currentAvatarUrl!.isNotEmpty
+                                          ? CachedNetworkImageProvider(
+                                                  _currentAvatarUrl!,
+                                                )
+                                                as ImageProvider
+                                          : null),
+                                child:
+                                    _profileImage == null &&
+                                        (_currentAvatarUrl == null ||
+                                            _currentAvatarUrl!.isEmpty)
+                                    ? Text(
+                                        initial,
+                                        style: const TextStyle(
+                                          fontSize: 36,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.camera_alt,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Contact Information',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── Basic Information Section ──
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1F2C34) : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.person_outline,
+                                color: Colors.blue,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Basic Information',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+
+                        _buildLabel('Full Name', isDark),
+                        const SizedBox(height: 8),
+                        _buildTextField(
+                          controller: _nameController,
+                          icon: Icons.person_outline,
+                          hintText: 'Enter full name',
+                          isDark: isDark,
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        _buildLabel('Category', isDark),
+                        const SizedBox(height: 8),
+                        GestureDetector(
+                          onTap: () {
+                            if (_categoryOverlayEntry != null) {
+                              _removeCategoryOverlay();
+                            } else {
+                              _showCategoryOverlay();
+                            }
+                          },
+                          child: Container(
+                            key: _categoryKey,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF121B22)
+                                  : const Color(0xFFFAFAFA),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: _categoryOverlayEntry != null
+                                    ? Colors.blue.shade600
+                                    : (isDark
+                                          ? Colors.grey.shade800
+                                          : Colors.grey.shade300),
+                                width: _categoryOverlayEntry != null
+                                    ? 1.5
+                                    : 1.0,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.category,
+                                  color: Colors.grey.shade400,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Text(
+                                    _selectedCategory.isEmpty
+                                        ? 'Select category'
+                                        : _selectedCategory,
+                                    style: TextStyle(
+                                      color: _selectedCategory.isEmpty
+                                          ? Colors.grey.shade400
+                                          : (isDark
+                                                ? Colors.white
+                                                : Colors.black87),
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                                Icon(
+                                  _categoryOverlayEntry != null
+                                      ? Icons.keyboard_arrow_up
+                                      : Icons.keyboard_arrow_down,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── Location Details Section ──
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1F2C34) : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.location_on_outlined,
+                                color: Colors.blue,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Location Details',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+
+                        _buildLabel('Street Address', isDark),
+                        const SizedBox(height: 8),
+                        _buildTextField(
+                          controller: _addressController,
+                          icon: Icons.home_outlined,
+                          hintText: 'Enter full address',
+                          isDark: isDark,
+                          maxLines: 3,
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        _buildLabel('Postal Code', isDark),
+                        const SizedBox(height: 8),
+                        _buildTextField(
+                          controller: _postalCodeController,
+                          icon: Icons.markunread_mailbox_outlined,
+                          hintText: 'Enter postal code',
+                          isDark: isDark,
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // ── Country Picker ──
+                        _buildLabel('Country', isDark),
+                        const SizedBox(height: 8),
+                        _buildSearchableSelector(
+                          widgetKey: _countryKey,
+                          icon: Icons.public,
+                          value: _selectedCountryName,
+                          hintText: _isLoadingCountries
+                              ? 'Loading countries...'
+                              : 'Select a country',
+                          isDark: isDark,
+                          onTap: _isLoadingCountries
+                              ? null
+                              : () => _showCountryPicker(isDark),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // ── State Picker ──
+                        _buildLabel('State / Province', isDark),
+                        const SizedBox(height: 8),
+                        _buildSearchableSelector(
+                          widgetKey: _stateKey,
+                          icon: Icons.map_outlined,
+                          value: _selectedStateName,
+                          hintText: _selectedCountryName == null
+                              ? 'Select country first'
+                              : 'Select a state',
+                          isDark: isDark,
+                          onTap: _selectedCountryCode == null
+                              ? null
+                              : () => _showStatePicker(isDark),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // ── City Picker ──
+                        _buildLabel('City', isDark),
+                        const SizedBox(height: 8),
+                        _buildSearchableSelector(
+                          widgetKey: _cityKey,
+                          icon: Icons.location_city,
+                          value: _selectedCityName,
+                          hintText: _selectedStateName == null
+                              ? 'Select state first'
+                              : 'Select a city',
+                          isDark: isDark,
+                          onTap: _selectedStateCode == null
+                              ? null
+                              : () => _showCityPicker(isDark),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── Info Box ──
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: Colors.blue.shade600,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'Changes will be saved to the contact record',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.blueGrey,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ),
+            // Loading overlay saat data contact sedang dimuat
+            if (_isLoadingContact)
+              Positioned.fill(
+                child: Container(
+                  color: isDark ? Colors.black54 : Colors.white70,
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(color: Colors.blue),
+                        SizedBox(height: 16),
+                        Text(
+                          'Loading contact data...',
+                          style: TextStyle(
+                            color: Colors.blueGrey,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
-    ),
     );
   }
 
   // ─────────────────────────────────────────────
   //  CATEGORY OVERLAY DROPDOWN
   // ─────────────────────────────────────────────
-  
+
   void _removeCategoryOverlay() {
     _categoryOverlayEntry?.remove();
     _categoryOverlayEntry = null;
@@ -676,7 +814,8 @@ class _EditContactPageState extends State<EditContactPage> {
   }
 
   void _showCategoryOverlay() {
-    final RenderBox renderBox = _categoryKey.currentContext!.findRenderObject() as RenderBox;
+    final RenderBox renderBox =
+        _categoryKey.currentContext!.findRenderObject() as RenderBox;
     final size = renderBox.size;
     final offset = renderBox.localToGlobal(Offset.zero);
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -709,7 +848,11 @@ class _EditContactPageState extends State<EditContactPage> {
                     return Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+                        border: Border.all(
+                          color: isDark
+                              ? Colors.grey.shade800
+                              : Colors.grey.shade200,
+                        ),
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -718,33 +861,65 @@ class _EditContactPageState extends State<EditContactPage> {
                             padding: const EdgeInsets.all(12.0),
                             child: TextField(
                               controller: _categorySearchController,
-                              style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14),
+                              style: TextStyle(
+                                color: isDark ? Colors.white : Colors.black87,
+                                fontSize: 14,
+                              ),
                               decoration: InputDecoration(
                                 hintText: 'Search...',
-                                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-                                prefixIcon: Icon(Icons.search, color: Colors.grey.shade400, size: 20),
+                                hintStyle: TextStyle(
+                                  color: Colors.grey.shade400,
+                                  fontSize: 14,
+                                ),
+                                prefixIcon: Icon(
+                                  Icons.search,
+                                  color: Colors.grey.shade400,
+                                  size: 20,
+                                ),
                                 filled: true,
-                                fillColor: isDark ? const Color(0xFF121B22) : const Color(0xFFFAFAFA),
-                                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                                fillColor: isDark
+                                    ? const Color(0xFF121B22)
+                                    : const Color(0xFFFAFAFA),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 0,
+                                ),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: BorderSide(color: isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+                                  borderSide: BorderSide(
+                                    color: isDark
+                                        ? Colors.grey.shade800
+                                        : Colors.grey.shade200,
+                                  ),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: BorderSide(color: isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+                                  borderSide: BorderSide(
+                                    color: isDark
+                                        ? Colors.grey.shade800
+                                        : Colors.grey.shade200,
+                                  ),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: const BorderSide(color: Colors.blue),
+                                  borderSide: const BorderSide(
+                                    color: Colors.blue,
+                                  ),
                                 ),
                               ),
                               onChanged: (text) {
                                 setOverlayState(() {
                                   if (text.isEmpty) {
-                                    _filteredCategories = List.from(_categories);
+                                    _filteredCategories = List.from(
+                                      _categories,
+                                    );
                                   } else {
-                                    _filteredCategories = _categories.where((c) => c.toLowerCase().contains(text.toLowerCase())).toList();
+                                    _filteredCategories = _categories
+                                        .where(
+                                          (c) => c.toLowerCase().contains(
+                                            text.toLowerCase(),
+                                          ),
+                                        )
+                                        .toList();
                                   }
                                 });
                               },
@@ -758,7 +933,9 @@ class _EditContactPageState extends State<EditContactPage> {
                                     child: Center(
                                       child: Text(
                                         'No categories found',
-                                        style: TextStyle(color: Colors.grey.shade500),
+                                        style: TextStyle(
+                                          color: Colors.grey.shade500,
+                                        ),
                                       ),
                                     ),
                                   )
@@ -778,11 +955,16 @@ class _EditContactPageState extends State<EditContactPage> {
                                           _removeCategoryOverlay();
                                         },
                                         child: Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                          ),
                                           child: Text(
                                             cat,
                                             style: TextStyle(
-                                              color: isDark ? Colors.white : Colors.black87,
+                                              color: isDark
+                                                  ? Colors.white
+                                                  : Colors.black87,
                                               fontSize: 14,
                                             ),
                                           ),
@@ -847,8 +1029,8 @@ class _EditContactPageState extends State<EditContactPage> {
                 ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 24),
                   leading: Icon(
-                    Icons.camera_alt, 
-                    color: isDark ? Colors.white : Colors.black87, 
+                    Icons.camera_alt,
+                    color: isDark ? Colors.white : Colors.black87,
                     size: 26,
                   ),
                   title: Text(
@@ -868,8 +1050,8 @@ class _EditContactPageState extends State<EditContactPage> {
                 ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 24),
                   leading: Icon(
-                    Icons.photo_library, 
-                    color: isDark ? Colors.white : Colors.black87, 
+                    Icons.photo_library,
+                    color: isDark ? Colors.white : Colors.black87,
                     size: 26,
                   ),
                   title: Text(
@@ -1015,8 +1197,9 @@ class _EditContactPageState extends State<EditContactPage> {
     required void Function(T) onSelected,
   }) {
     _removeLocationOverlay();
-    
-    final RenderBox renderBox = anchorKey.currentContext!.findRenderObject() as RenderBox;
+
+    final RenderBox renderBox =
+        anchorKey.currentContext!.findRenderObject() as RenderBox;
     final size = renderBox.size;
     final offset = renderBox.localToGlobal(Offset.zero);
 
@@ -1049,7 +1232,11 @@ class _EditContactPageState extends State<EditContactPage> {
                     return Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+                        border: Border.all(
+                          color: isDark
+                              ? Colors.grey.shade800
+                              : Colors.grey.shade200,
+                        ),
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -1058,25 +1245,49 @@ class _EditContactPageState extends State<EditContactPage> {
                             padding: const EdgeInsets.all(12.0),
                             child: TextField(
                               controller: _locationSearchController,
-                              style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14),
+                              style: TextStyle(
+                                color: isDark ? Colors.white : Colors.black87,
+                                fontSize: 14,
+                              ),
                               decoration: InputDecoration(
                                 hintText: 'Search...',
-                                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-                                prefixIcon: Icon(Icons.search, color: Colors.grey.shade400, size: 20),
+                                hintStyle: TextStyle(
+                                  color: Colors.grey.shade400,
+                                  fontSize: 14,
+                                ),
+                                prefixIcon: Icon(
+                                  Icons.search,
+                                  color: Colors.grey.shade400,
+                                  size: 20,
+                                ),
                                 filled: true,
-                                fillColor: isDark ? const Color(0xFF121B22) : const Color(0xFFFAFAFA),
-                                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                                fillColor: isDark
+                                    ? const Color(0xFF121B22)
+                                    : const Color(0xFFFAFAFA),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 0,
+                                ),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: BorderSide(color: isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+                                  borderSide: BorderSide(
+                                    color: isDark
+                                        ? Colors.grey.shade800
+                                        : Colors.grey.shade200,
+                                  ),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: BorderSide(color: isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+                                  borderSide: BorderSide(
+                                    color: isDark
+                                        ? Colors.grey.shade800
+                                        : Colors.grey.shade200,
+                                  ),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: const BorderSide(color: Colors.blue),
+                                  borderSide: const BorderSide(
+                                    color: Colors.blue,
+                                  ),
                                 ),
                               ),
                               onChanged: (text) {
@@ -1084,7 +1295,13 @@ class _EditContactPageState extends State<EditContactPage> {
                                   if (text.isEmpty) {
                                     filteredItems = List.from(items);
                                   } else {
-                                    filteredItems = items.where((i) => getName(i).toLowerCase().contains(text.toLowerCase())).toList();
+                                    filteredItems = items
+                                        .where(
+                                          (i) => getName(i)
+                                              .toLowerCase()
+                                              .contains(text.toLowerCase()),
+                                        )
+                                        .toList();
                                   }
                                 });
                               },
@@ -1098,7 +1315,9 @@ class _EditContactPageState extends State<EditContactPage> {
                                     child: Center(
                                       child: Text(
                                         'No results found',
-                                        style: TextStyle(color: Colors.grey.shade500),
+                                        style: TextStyle(
+                                          color: Colors.grey.shade500,
+                                        ),
                                       ),
                                     ),
                                   )
@@ -1117,11 +1336,16 @@ class _EditContactPageState extends State<EditContactPage> {
                                           }
                                         },
                                         child: Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                          ),
                                           child: Text(
                                             name,
                                             style: TextStyle(
-                                              color: isDark ? Colors.white : Colors.black87,
+                                              color: isDark
+                                                  ? Colors.white
+                                                  : Colors.black87,
                                               fontSize: 14,
                                             ),
                                           ),
@@ -1159,7 +1383,8 @@ class _EditContactPageState extends State<EditContactPage> {
     VoidCallback? onTap,
   }) {
     final isDisabled = onTap == null;
-    final isActive = _activeLocationKey == widgetKey && _locationOverlayEntry != null;
+    final isActive =
+        _activeLocationKey == widgetKey && _locationOverlayEntry != null;
 
     return GestureDetector(
       onTap: onTap,
@@ -1172,8 +1397,8 @@ class _EditContactPageState extends State<EditContactPage> {
               : (isDark ? const Color(0xFF121B22) : const Color(0xFFFAFAFA)),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isActive 
-                ? Colors.blue.shade600 
+            color: isActive
+                ? Colors.blue.shade600
                 : (isDark ? Colors.grey.shade800 : Colors.grey.shade200),
             width: isActive ? 1.5 : 1.0,
           ),
@@ -1194,8 +1419,8 @@ class _EditContactPageState extends State<EditContactPage> {
               ),
             ),
             Icon(
-              isActive ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, 
-              color: Colors.grey.shade500
+              isActive ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+              color: Colors.grey.shade500,
             ),
           ],
         ),
@@ -1224,7 +1449,10 @@ class _EditContactPageState extends State<EditContactPage> {
     return TextField(
       controller: controller,
       maxLines: maxLines,
-      style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14),
+      style: TextStyle(
+        color: isDark ? Colors.white : Colors.black87,
+        fontSize: 14,
+      ),
       decoration: InputDecoration(
         hintText: hintText,
         hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
@@ -1232,17 +1460,25 @@ class _EditContactPageState extends State<EditContactPage> {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Icon(icon, color: Colors.grey.shade400, size: 20),
         ),
-        prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        prefixIconConstraints: const BoxConstraints(
+          minWidth: 40,
+          minHeight: 40,
+        ),
         filled: true,
         fillColor: isDark ? const Color(0xFF121B22) : const Color(0xFFFAFAFA),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: Colors.grey.shade300),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+          borderSide: BorderSide(
+            color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -1264,7 +1500,9 @@ class _EditContactPageState extends State<EditContactPage> {
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF121B22) : const Color(0xFFFAFAFA),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+        border: Border.all(
+          color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
+        ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: DropdownButtonHideUnderline(
@@ -1349,7 +1587,10 @@ class _SearchableListState<T> extends State<_SearchableList<T>> {
         _filteredItems = widget.items;
       } else {
         _filteredItems = widget.items.where((item) {
-          return widget.getName(item).toLowerCase().contains(query.toLowerCase());
+          return widget
+              .getName(item)
+              .toLowerCase()
+              .contains(query.toLowerCase());
         }).toList();
       }
     });
@@ -1402,7 +1643,9 @@ class _SearchableListState<T> extends State<_SearchableList<T>> {
                   hintStyle: TextStyle(color: Colors.grey.shade400),
                   prefixIcon: Icon(Icons.search, color: Colors.grey.shade400),
                   filled: true,
-                  fillColor: widget.isDark ? const Color(0xFF121B22) : const Color(0xFFF5F5F5),
+                  fillColor: widget.isDark
+                      ? const Color(0xFF121B22)
+                      : const Color(0xFFF5F5F5),
                   contentPadding: const EdgeInsets.symmetric(vertical: 12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -1432,7 +1675,9 @@ class _SearchableListState<T> extends State<_SearchableList<T>> {
                           title: Text(
                             name,
                             style: TextStyle(
-                              color: widget.isDark ? Colors.white : Colors.black87,
+                              color: widget.isDark
+                                  ? Colors.white
+                                  : Colors.black87,
                               fontSize: 14,
                             ),
                           ),

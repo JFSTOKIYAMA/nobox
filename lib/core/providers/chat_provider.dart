@@ -9,6 +9,7 @@ import '../model/api_response.dart';
 import '../services/push_notification_service.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
+
 // =====================================================================
 // FITUR: Provider Chat Utama
 // FILE: lib/core/providers/chat_provider.dart
@@ -86,18 +87,17 @@ class ChatProvider with ChangeNotifier {
   void _notifyDebounced() {
     if (_isDisposed) return;
     if (_pendingNotify) return; // Already scheduled
-    
+
     _pendingNotify = true;
     _notifyDebounce?.cancel();
-    _notifyDebounce = Timer(const Duration(milliseconds: 16), () { // ~1 frame
+    _notifyDebounce = Timer(const Duration(milliseconds: 16), () {
+      // ~1 frame
       if (!_isDisposed) {
         _pendingNotify = false;
         notifyListeners();
       }
     });
   }
-
-  
 
   // FIX: Unread Override Shield
   // Backend kadang mereturn UnreadCount = 0 pada API/SignalR jika aplikasi sedang berjalan di foreground,
@@ -148,18 +148,52 @@ class ChatProvider with ChangeNotifier {
   /// sebuah percakapan lama TIDAK "menular" ke room BARU milik kontak yang sama.
   bool isRoomArchived(String roomId) {
     if (roomId.isEmpty) return false;
-    if (_archivedIds.contains(roomId)) return true;
-    final cleanNumeric = roomId.replaceAll(RegExp(r'[^0-9]'), '');
-    if (cleanNumeric.isNotEmpty && _archivedIds.contains(cleanNumeric)) return true;
+
+    // Bangun semua varian ID kandidat untuk pencocokan fleksibel:
+    // - roomId mentah (bisa mengandung prefix tenant_channel, mis. "1022_14949")
+    // - varian angka murni ("102214949")
+    // - bagian setelah underscore untuk ID komposit ("1022_14949" -> "14949")
+    final candidates = <String>{
+      roomId,
+      roomId.replaceAll(RegExp(r'[^0-9]'), ''),
+      if (roomId.contains('_')) roomId.split('_').last,
+    }..removeWhere((s) => s.isEmpty);
+
+    // Bentuk numerik dari setiap id yang sudah diarsipkan untuk pencocokan silang.
+    final archivedNumerics = _archivedIds
+        .map((id) => id.replaceAll(RegExp(r'[^0-9]'), ''))
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    for (final candidate in candidates) {
+      if (_archivedIds.contains(candidate)) return true;
+      final candidateNumeric = candidate.replaceAll(RegExp(r'[^0-9]'), '');
+      if (candidateNumeric.isNotEmpty &&
+          archivedNumerics.contains(candidateNumeric)) {
+        return true;
+      }
+    }
+
     final idx = _chats.indexWhere((c) {
-      if (c.id == roomId) return true;
-      if (cleanNumeric.isNotEmpty && c.id.replaceAll(RegExp(r'[^0-9]'), '') == cleanNumeric) return true;
+      for (final candidate in candidates) {
+        if (c.id == candidate) return true;
+        final cNumeric = c.id.replaceAll(RegExp(r'[^0-9]'), '');
+        final candidateNumeric = candidate.replaceAll(RegExp(r'[^0-9]'), '');
+        if (cNumeric.isNotEmpty &&
+            candidateNumeric.isNotEmpty &&
+            cNumeric == candidateNumeric) {
+          return true;
+        }
+      }
       return false;
     });
     if (idx != -1) {
       final c = _chats[idx];
       if (c.isArchived) return true;
       if (_archivedIds.contains(c.id)) return true;
+      final cNumeric = c.id.replaceAll(RegExp(r'[^0-9]'), '');
+      if (cNumeric.isNotEmpty && archivedNumerics.contains(cNumeric))
+        return true;
     }
     return false;
   }
@@ -207,7 +241,12 @@ class ChatProvider with ChangeNotifier {
   final Set<String> _roomsWithDeletions = {};
   Map<String, String> _deletionTimestamps = {};
 
-  void recordDeletedMessage(String roomId, {String? msgId, String? content, String? rawTime}) {
+  void recordDeletedMessage(
+    String roomId, {
+    String? msgId,
+    String? content,
+    String? rawTime,
+  }) {
     if (roomId.isEmpty) return;
     _roomsWithDeletions.add(roomId);
     _deletionTimestamps[roomId] = DateTime.now().toUtc().toIso8601String();
@@ -219,17 +258,28 @@ class ChatProvider with ChangeNotifier {
       _deletedMessageIds.putIfAbsent(roomId, () => <String>{}).add(msgId);
     }
     if (content != null && content.trim().isNotEmpty) {
-      _deletedMessageContents.putIfAbsent(roomId, () => <String>{}).add(content.trim().toLowerCase());
+      _deletedMessageContents
+          .putIfAbsent(roomId, () => <String>{})
+          .add(content.trim().toLowerCase());
     }
   }
 
-  bool isMessageDeleted(String roomId, {String? msgId, String? content, String? rawTime}) {
+  bool isMessageDeleted(
+    String roomId, {
+    String? msgId,
+    String? content,
+    String? rawTime,
+  }) {
     if (roomId.isEmpty) return false;
     if (rawTime != null && _isTimeIgnored(roomId, rawTime)) return true;
-    if (msgId != null && msgId.isNotEmpty && (_deletedMessageIds[roomId]?.contains(msgId) ?? false)) return true;
+    if (msgId != null &&
+        msgId.isNotEmpty &&
+        (_deletedMessageIds[roomId]?.contains(msgId) ?? false))
+      return true;
     if (content != null && content.trim().isNotEmpty) {
       final clean = content.trim().toLowerCase();
-      if (_deletedMessageContents[roomId]?.contains(clean) ?? false) return true;
+      if (_deletedMessageContents[roomId]?.contains(clean) ?? false)
+        return true;
     }
     return false;
   }
@@ -249,7 +299,7 @@ class ChatProvider with ChangeNotifier {
     final clean = text.trim().toLowerCase();
     _recentSentMessages.putIfAbsent(roomId, () => {})[clean] = DateTime.now();
     _recentIsMeFlags[roomId] = true;
-    
+
     // Auto-cleanup pesan lebih dari 3 menit
     _recentSentMessages[roomId]!.removeWhere(
       (_, time) => DateTime.now().difference(time).inMinutes >= 3,
@@ -303,7 +353,10 @@ class ChatProvider with ChangeNotifier {
   Future<void> _saveDeletionTimestamps() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('deletion_timestamps', jsonEncode(_deletionTimestamps));
+      await prefs.setString(
+        'deletion_timestamps',
+        jsonEncode(_deletionTimestamps),
+      );
     } catch (_) {}
   }
 
@@ -321,7 +374,11 @@ class ChatProvider with ChangeNotifier {
       return false;
     }
 
-    if (isMessageDeleted(roomId, content: serverLastMsg, rawTime: serverTimeStr)) {
+    if (isMessageDeleted(
+      roomId,
+      content: serverLastMsg,
+      rawTime: serverTimeStr,
+    )) {
       return false;
     }
 
@@ -356,10 +413,15 @@ class ChatProvider with ChangeNotifier {
     final overrideCreatedAtStr = _overrideTimestamps[roomId];
     if (overrideCreatedAtStr != null) {
       final overrideCreatedAt = DateTime.tryParse(
-        overrideCreatedAtStr.endsWith('Z') ? overrideCreatedAtStr : '${overrideCreatedAtStr}Z',
+        overrideCreatedAtStr.endsWith('Z')
+            ? overrideCreatedAtStr
+            : '${overrideCreatedAtStr}Z',
       );
       if (overrideCreatedAt != null) {
-        final age = DateTime.now().toUtc().difference(overrideCreatedAt).inSeconds;
+        final age = DateTime.now()
+            .toUtc()
+            .difference(overrideCreatedAt)
+            .inSeconds;
         if (age >= 0 && age < 10) {
           return false;
         }
@@ -426,7 +488,10 @@ class ChatProvider with ChangeNotifier {
     final q = query.trim().toLowerCase();
     return list.where((item) {
       final name = (item['Name'] ?? item['Nm'] ?? '').toString().toLowerCase();
-      final hp = (item['Hp'] ?? item['Phone'] ?? item['Mobile'] ?? item['Telp'] ?? '').toString().toLowerCase();
+      final hp =
+          (item['Hp'] ?? item['Phone'] ?? item['Mobile'] ?? item['Telp'] ?? '')
+              .toString()
+              .toLowerCase();
       return name.contains(q) || hp.contains(q);
     }).toList();
   }
@@ -667,18 +732,18 @@ class ChatProvider with ChangeNotifier {
       if (!response.isError && response.data != null) {
         // Guard: jika generation sudah berubah (user ganti tab lagi), abaikan response ini
         if (gen != _fetchGeneration) {
-          debugPrint('ChatProvider: fetchChats generation stale ($gen vs ${_fetchGeneration}), discarding');
+          debugPrint(
+            'ChatProvider: fetchChats generation stale ($gen vs ${_fetchGeneration}), discarding',
+          );
           _isLoading = false;
           notifyListeners();
           return;
         }
 
-        final freshData = response.data!
-            .where((c) {
-              final name = c.participantEmail.toLowerCase().trim();
-              return name != 'saved messages' && name != 'pesan tersimpan';
-            })
-            .toList();
+        final freshData = response.data!.where((c) {
+          final name = c.participantEmail.toLowerCase().trim();
+          return name != 'saved messages' && name != 'pesan tersimpan';
+        }).toList();
 
         // Buat map dari chat yang sudah ada untuk komparasi unreadCount
         final oldChatsMap = {for (var c in _chats) c.id: c};
@@ -705,7 +770,10 @@ class ChatProvider with ChangeNotifier {
 
           if (oldChat != null) {
             // FIX: Cek apakah pesan terakhir adalah pesan yang baru kita kirim dari aplikasi ini
-            final bool isSentByMeRecently = isRecentMessageFromMe(chat.id, chat.lastMessage);
+            final bool isSentByMeRecently = isRecentMessageFromMe(
+              chat.id,
+              chat.lastMessage,
+            );
 
             if (isSentByMeRecently) {
               chat = chat.copyWith(
@@ -714,7 +782,8 @@ class ChatProvider with ChangeNotifier {
                 unreadCount: 0,
                 sdrMsg: 'me',
               );
-            } else if (!chat.isLastMessageFromMe && oldChat.isLastMessageFromMe) {
+            } else if (!chat.isLastMessageFromMe &&
+                oldChat.isLastMessageFromMe) {
               // FIX: Pewarisan isLastMessageFromMe dari cache lokal
               // Karena backend NoBox sering tidak menyertakan IsMe=true untuk balasan kita di endpoint List.
               // Jika pesan teksnya mirip/sama (atau media), kita wariskan statusnya agar tidak memicu unread palsu.
@@ -736,7 +805,10 @@ class ChatProvider with ChangeNotifier {
                 'lokasi',
                 'media',
               ].any((lbl) => oldLower.contains(lbl));
-              final isTextMatch = oldLower.isNotEmpty && newLower.isNotEmpty && newLower == oldLower; 
+              final isTextMatch =
+                  oldLower.isNotEmpty &&
+                  newLower.isNotEmpty &&
+                  newLower == oldLower;
               if (isTextMatch || (isMediaJSON && oldHasMediaLabel)) {
                 chat = chat.copyWith(
                   isLastMessageFromMe: true,
@@ -747,7 +819,8 @@ class ChatProvider with ChangeNotifier {
               }
             }
 
-            if (_recentIsMeFlags.containsKey(chat.id) && _recentIsMeFlags[chat.id] == true) {
+            if (_recentIsMeFlags.containsKey(chat.id) &&
+                _recentIsMeFlags[chat.id] == true) {
               chat = chat.copyWith(
                 isLastMessageFromMe: true,
                 needReply: false,
@@ -785,10 +858,11 @@ class ChatProvider with ChangeNotifier {
               isNewMessage = true;
               forcedUnread = chat.unreadCount > 0
                   ? chat.unreadCount
-                  : ((_localUnreadOverrides[chat.id] ?? oldChat.unreadCount) + 1);
+                  : ((_localUnreadOverrides[chat.id] ?? oldChat.unreadCount) +
+                        1);
             } else if (chat.isLastMessageFromMe) {
               // Jika pesan terakhir dari Agen (isLastMessageFromMe = true),
-              // Hapus override angka indikator dan tandai sebagai terbaca (0) 
+              // Hapus override angka indikator dan tandai sebagai terbaca (0)
               // tanpa peduli apakah isi pesan/waktu berubah atau tidak (bugfix).
               _localUnreadOverrides.remove(chat.id);
               if (!_readIds.contains(chat.id)) _readIds.add(chat.id);
@@ -906,9 +980,17 @@ class ChatProvider with ChangeNotifier {
                 lastMessageType: override.lastMessageType,
                 time: override.time,
                 isLastMessageFromMe: override.isLastMessageFromMe,
-                sdrMsg: override.isLastMessageFromMe ? 'me' : (override.sdrMsg.isNotEmpty ? override.sdrMsg : chat.sdrMsg),
-                needReply: override.isLastMessageFromMe ? false : chat.needReply,
-                unreadCount: override.isLastMessageFromMe ? 0 : chat.unreadCount,
+                sdrMsg: override.isLastMessageFromMe
+                    ? 'me'
+                    : (override.sdrMsg.isNotEmpty
+                          ? override.sdrMsg
+                          : chat.sdrMsg),
+                needReply: override.isLastMessageFromMe
+                    ? false
+                    : chat.needReply,
+                unreadCount: override.isLastMessageFromMe
+                    ? 0
+                    : chat.unreadCount,
               );
             } else {
               // Override sudah terlalu lama, kita percaya pada data server saat ini
@@ -1039,7 +1121,10 @@ class ChatProvider with ChangeNotifier {
         // Pertahankan urutan yang sudah ada di _pinnedIds secara absolut agar tidak berubah posisi saat ada pesan baru.
         // KONSISTEN: Tambahkan pinned chat baru ke AWAL (beginning) seperti togglePin,
         // agar urutan "pinned terbaru di atas" konsisten di seluruh aplikasi.
-        final serverPinnedIds = _chats.where((c) => c.isPinned).map((c) => c.id).toList();
+        final serverPinnedIds = _chats
+            .where((c) => c.isPinned)
+            .map((c) => c.id)
+            .toList();
         bool pinnedChanged = false;
         for (final id in serverPinnedIds) {
           if (!_pinnedIds.contains(id)) {
@@ -1087,7 +1172,8 @@ class ChatProvider with ChangeNotifier {
         final invalidRooms = _chats
             .where((c) {
               final lower = c.lastMessage.toLowerCase();
-              final isSystemOrPlaceholder = c.lastMessage == 'Site.Inbox.DeletedMessage' ||
+              final isSystemOrPlaceholder =
+                  c.lastMessage == 'Site.Inbox.DeletedMessage' ||
                   lower.contains('site.inbox.') ||
                   lower.contains('percakapan di-assign') ||
                   lower.contains('percakapan diselesaikan') ||
@@ -1205,7 +1291,10 @@ class ChatProvider with ChangeNotifier {
     if (roomId.isEmpty) return;
 
     // FIX: Abaikan update room dari Telegram "Saved Messages"
-    final ctName = (roomData['Ct'] ?? roomData['CtRealNm'] ?? roomData['Name'] ?? '').toString().toLowerCase();
+    final ctName =
+        (roomData['Ct'] ?? roomData['CtRealNm'] ?? roomData['Name'] ?? '')
+            .toString()
+            .toLowerCase();
     if (ctName == 'saved messages' || ctName == 'pesan tersimpan') {
       return;
     }
@@ -1239,7 +1328,8 @@ class ChatProvider with ChangeNotifier {
         if (!serverIsNewer) {
           lastMsg = existing.lastMessage;
           roomData['LastMessageType'] = existing.lastMessageType;
-          roomData['TimeMsg'] = existing.time; // Lindungi waktu agar posisi tidak turun!
+          roomData['TimeMsg'] =
+              existing.time; // Lindungi waktu agar posisi tidak turun!
           debugPrint(
             'ChatProvider: 🛡️ Override protected for $roomId – incoming SignalR event is ignored',
           );
@@ -1387,10 +1477,12 @@ class ChatProvider with ChangeNotifier {
       }
 
       // FIX: Normalisasi LastMessageType dan LastMessage pada event SignalR
-      String? updatedType = roomData['LastMessageType']?.toString() ?? existing.lastMessageType;
+      String? updatedType =
+          roomData['LastMessageType']?.toString() ?? existing.lastMessageType;
       final lowerResolved = lastMsg.trim().toLowerCase();
 
-      final isGenericWord = lowerResolved.isEmpty ||
+      final isGenericWord =
+          lowerResolved.isEmpty ||
           lowerResolved == 'null' ||
           lowerResolved == 'document(empty)' ||
           lowerResolved == 'voice(empty)' ||
@@ -1406,7 +1498,8 @@ class ChatProvider with ChangeNotifier {
           lowerResolved == 'audio' ||
           lowerResolved == 'pesan suara';
 
-      final isAudioLastMsg = lowerResolved.contains('🎤') ||
+      final isAudioLastMsg =
+          lowerResolved.contains('🎤') ||
           lowerResolved.contains('pesan suara') ||
           lowerResolved.contains('voice note') ||
           lowerResolved.contains('.ogg') ||
@@ -1418,7 +1511,10 @@ class ChatProvider with ChangeNotifier {
           lowerResolved == 'voice(empty)' ||
           (existing.lastMessageType == '2' && isGenericWord);
 
-      if (isAudioLastMsg || updatedType == '2' || updatedType == 'voice' || updatedType == 'audio') {
+      if (isAudioLastMsg ||
+          updatedType == '2' ||
+          updatedType == 'voice' ||
+          updatedType == 'audio') {
         updatedType = '2';
         if (isGenericWord || lastMsg.isEmpty) {
           lastMsg = '🎤 Pesan Suara';
@@ -1497,7 +1593,9 @@ class ChatProvider with ChangeNotifier {
           _localUnreadOverrides.remove(roomId);
           if (!_readIds.contains(roomId)) _readIds.add(roomId);
           _saveReadState();
-          debugPrint('ChatProvider: 🧹 Cleared Unread (via TerimaSubSpv - Agent Reply) for room $roomId');
+          debugPrint(
+            'ChatProvider: 🧹 Cleared Unread (via TerimaSubSpv - Agent Reply) for room $roomId',
+          );
         } else {
           // Pesan dari pelanggan (Customer)!
           int finalUc;
@@ -1505,14 +1603,17 @@ class ChatProvider with ChangeNotifier {
             // Gunakan Uc akurat dari server NoBox
             finalUc = uc;
           } else {
-            final currentOver = _localUnreadOverrides[roomId] ?? existing.unreadCount;
+            final currentOver =
+                _localUnreadOverrides[roomId] ?? existing.unreadCount;
             finalUc = currentOver > 0 ? currentOver : 1;
           }
-          
+
           _localUnreadOverrides[roomId] = finalUc;
           _readIds.remove(roomId);
           _saveReadState();
-          debugPrint('ChatProvider: 📈 Using SignalR Uc ($finalUc) [Raw Server: $uc, Existing: ${existing.unreadCount}] for room $roomId');
+          debugPrint(
+            'ChatProvider: 📈 Using SignalR Uc ($finalUc) [Raw Server: $uc, Existing: ${existing.unreadCount}] for room $roomId',
+          );
         }
       } else if (isSmartMeFallback ||
           PushNotificationService.currentRoomId == roomId) {
@@ -1521,13 +1622,15 @@ class ChatProvider with ChangeNotifier {
         _saveReadState();
       }
 
-      final bool isExplicitCustomer = sdrMsg.toLowerCase() == 'you' ||
+      final bool isExplicitCustomer =
+          sdrMsg.toLowerCase() == 'you' ||
           (!isRecentMe && sdrMsg.toLowerCase() != 'me' && !isSmartMeFallback);
 
-      final bool isNewerOrDifferentForState = serverTimeParsed != null &&
-            (existingTimeParsed == null ||
-                serverTimeParsed.isAfter(existingTimeParsed) ||
-                lastMsg.trim() != existing.lastMessage.trim());
+      final bool isNewerOrDifferentForState =
+          serverTimeParsed != null &&
+          (existingTimeParsed == null ||
+              serverTimeParsed.isAfter(existingTimeParsed) ||
+              lastMsg.trim() != existing.lastMessage.trim());
 
       final bool isFromAgentForState;
       if (isExplicitCustomer) {
@@ -1540,14 +1643,16 @@ class ChatProvider with ChangeNotifier {
             (sdrMsg.toLowerCase() == 'system' && !existing.isGroup) ||
             isSmartMeFallback;
       } else {
-        isFromAgentForState = existing.isLastMessageFromMe || isSentByMeRecently;
+        isFromAgentForState =
+            existing.isLastMessageFromMe || isSentByMeRecently;
       }
 
       final bool finalNeedReply = isFromAgentForState
           ? false
           : (roomData.containsKey('IsNeedReply')
-              ? (roomData['IsNeedReply'] == 1 || roomData['IsNeedReply'] == true)
-              : (isExplicitCustomer ? true : existing.needReply));
+                ? (roomData['IsNeedReply'] == 1 ||
+                      roomData['IsNeedReply'] == true)
+                : (isExplicitCustomer ? true : existing.needReply));
 
       final String resolvedSdrMsg;
       if (isFromAgentForState) {
@@ -1560,7 +1665,8 @@ class ChatProvider with ChangeNotifier {
         resolvedSdrMsg = existing.sdrMsg.isNotEmpty ? existing.sdrMsg : 'you';
       }
 
-      final bool isArchived = existing.isArchived ||
+      final bool isArchived =
+          existing.isArchived ||
           isRoomArchived(roomId) ||
           isRoomArchived(existing.id);
       if (isArchived) {
@@ -1576,7 +1682,11 @@ class ChatProvider with ChangeNotifier {
                 PushNotificationService.currentRoomId == roomId)
             ? 0
             : (_localUnreadOverrides[roomId] ??
-                (uc > 0 ? uc : (existing.unreadCount > 0 ? existing.unreadCount : (isExplicitCustomer ? 1 : 0)))),
+                  (uc > 0
+                      ? uc
+                      : (existing.unreadCount > 0
+                            ? existing.unreadCount
+                            : (isExplicitCustomer ? 1 : 0)))),
         time: timeMsg,
         needReply: finalNeedReply,
         isLastMessageFromMe: isFromAgentForState,
@@ -1614,7 +1724,8 @@ class ChatProvider with ChangeNotifier {
     String msgText = '',
   }) {
     if (roomId.isEmpty) return;
-    if (msgText.toLowerCase() == 'saved messages' || msgText.toLowerCase() == 'pesan tersimpan') {
+    if (msgText.toLowerCase() == 'saved messages' ||
+        msgText.toLowerCase() == 'pesan tersimpan') {
       return;
     }
 
@@ -1647,8 +1758,17 @@ class ChatProvider with ChangeNotifier {
           .replaceAll(RegExp(r'^[0-9]+_'), '');
       final numericRoomId = roomId.replaceAll(RegExp(r'[^0-9\-]'), '');
       index = _chats.indexWhere((c) {
-        if (c.contactId == roomId || c.ctRealId == roomId || c.link == roomId || c.extId == roomId) return true;
-        if (cleanRoomId.isNotEmpty && (c.contactId == cleanRoomId || c.ctRealId == cleanRoomId || c.link == cleanRoomId || c.extId == cleanRoomId)) return true;
+        if (c.contactId == roomId ||
+            c.ctRealId == roomId ||
+            c.link == roomId ||
+            c.extId == roomId)
+          return true;
+        if (cleanRoomId.isNotEmpty &&
+            (c.contactId == cleanRoomId ||
+                c.ctRealId == cleanRoomId ||
+                c.link == cleanRoomId ||
+                c.extId == cleanRoomId))
+          return true;
         if (numericRoomId.isNotEmpty) {
           final cNum = c.id.replaceAll(RegExp(r'[^0-9\-]'), '');
           final ctNum = c.ctRealId.replaceAll(RegExp(r'[^0-9\-]'), '');
@@ -1675,20 +1795,26 @@ class ChatProvider with ChangeNotifier {
       refreshFirstPage();
     } else {
       final matchedChat = _chats[index];
-      final isCurrentRoom = PushNotificationService.currentRoomId != null &&
+      final isCurrentRoom =
+          PushNotificationService.currentRoomId != null &&
           (PushNotificationService.currentRoomId == roomId ||
               PushNotificationService.currentRoomId == matchedChat.id ||
               PushNotificationService.currentRoomId == matchedChat.contactId ||
               PushNotificationService.currentRoomId == matchedChat.ctRealId);
       if (!isCurrentRoom && !resolvedIsMe) {
-        final currentUc = _localUnreadOverrides[roomId] ?? _localUnreadOverrides[matchedChat.id] ?? matchedChat.unreadCount;
+        final currentUc =
+            _localUnreadOverrides[roomId] ??
+            _localUnreadOverrides[matchedChat.id] ??
+            matchedChat.unreadCount;
         final newUc = currentUc > 0 ? currentUc + 1 : 1;
         _localUnreadOverrides[roomId] = newUc;
         _localUnreadOverrides[matchedChat.id] = newUc;
         _readIds.remove(roomId);
         _readIds.remove(matchedChat.id);
         _saveReadState();
-        debugPrint('ChatProvider: 📈 Incremented Unread (via handleTerimaPesanSync) for room $roomId. New Uc: $newUc');
+        debugPrint(
+          'ChatProvider: 📈 Incremented Unread (via handleTerimaPesanSync) for room $roomId. New Uc: $newUc',
+        );
       } else if (resolvedIsMe) {
         _localUnreadOverrides.remove(roomId);
         _localUnreadOverrides.remove(matchedChat.id);
@@ -1704,7 +1830,8 @@ class ChatProvider with ChangeNotifier {
           msgText = '📍 Location';
         }
         final lowerMsg = msgText.trim().toLowerCase();
-        final isGeneric = lowerMsg == 'lampiran' ||
+        final isGeneric =
+            lowerMsg == 'lampiran' ||
             lowerMsg == 'attachment' ||
             lowerMsg == 'document' ||
             lowerMsg == 'file' ||
@@ -1713,12 +1840,16 @@ class ChatProvider with ChangeNotifier {
 
         String finalMsgText = msgText;
         String? finalLastType = _chats[index].lastMessageType;
-        if (isGeneric && (_chats[index].lastMessageType == '2' || _chats[index].lastMessage.contains('🎤') || _chats[index].lastMessage.contains('Pesan Suara'))) {
+        if (isGeneric &&
+            (_chats[index].lastMessageType == '2' ||
+                _chats[index].lastMessage.contains('🎤') ||
+                _chats[index].lastMessage.contains('Pesan Suara'))) {
           finalMsgText = '🎤 Pesan Suara';
           finalLastType = '2';
         }
 
-        final bool isArchived = matchedChat.isArchived ||
+        final bool isArchived =
+            matchedChat.isArchived ||
             isRoomArchived(roomId) ||
             isRoomArchived(matchedChat.id);
         if (isArchived) {
@@ -1732,7 +1863,10 @@ class ChatProvider with ChangeNotifier {
           time: DateTime.now().toUtc().toIso8601String(),
           unreadCount: resolvedIsMe
               ? 0
-              : (_localUnreadOverrides[roomId] ?? (_chats[index].unreadCount > 0 ? _chats[index].unreadCount : 1)),
+              : (_localUnreadOverrides[roomId] ??
+                    (_chats[index].unreadCount > 0
+                        ? _chats[index].unreadCount
+                        : 1)),
           isLastMessageFromMe: resolvedIsMe,
           needReply: resolvedIsMe ? false : true,
           sdrMsg: resolvedIsMe ? 'me' : 'you',
@@ -1746,7 +1880,7 @@ class ChatProvider with ChangeNotifier {
 
       _notifyDebounced(); // ANR FIX: Batch rapid SignalR updates
     }
-    
+
     // Sesuai arahan Mas Erik: Hapus background refresh API (yang dulu dibuat dengan delay 5 detik).
     // Ini yang sebelumnya menyebabkan Uc sempat terbaca 0 karena menembak API Chatrooms/List saat pesan baru masuk.
     // TerimaSubSpv akan mengirimkan data yang 100% akurat sesaat lagi.
@@ -1902,7 +2036,9 @@ class ChatProvider with ChangeNotifier {
             lowerMsg.contains('.m4a') ||
             lowerMsg.contains('voice_')) {
           resolvedLastMessageType = '2';
-        } else if (lowerMsg.contains('📷') || lowerMsg.contains('foto') || lowerMsg.contains('photo')) {
+        } else if (lowerMsg.contains('📷') ||
+            lowerMsg.contains('foto') ||
+            lowerMsg.contains('photo')) {
           resolvedLastMessageType = '3';
         } else if (lowerMsg.contains('🎬') || lowerMsg.contains('video')) {
           resolvedLastMessageType = '4';
@@ -1913,7 +2049,8 @@ class ChatProvider with ChangeNotifier {
         }
       }
 
-      final bool isArchived = _chats[index].isArchived ||
+      final bool isArchived =
+          _chats[index].isArchived ||
           isRoomArchived(roomId) ||
           isRoomArchived(_chats[index].id);
       if (isArchived) {
@@ -1956,7 +2093,10 @@ class ChatProvider with ChangeNotifier {
 
   /// Hanya merefresh halaman pertama percakapan tanpa mereset pagination.
   /// Digunakan oleh SignalR dan polling untuk memperbarui data tanpa merusak scroll tanpa batas.
-  Future<void> refreshFirstPage({int? customStatusCode, bool showLoading = false}) async {
+  Future<void> refreshFirstPage({
+    int? customStatusCode,
+    bool showLoading = false,
+  }) async {
     if (_isLoading || _isLoadingMore || _isRefreshingFirstPage) return;
     _isRefreshingFirstPage = true;
 
@@ -1964,7 +2104,7 @@ class ChatProvider with ChangeNotifier {
       _isLoading = true;
       notifyListeners();
     }
-    
+
     try {
       final statusCode =
           customStatusCode ?? _statusCodeForFilter(_activeFilter);
@@ -1985,12 +2125,10 @@ class ChatProvider with ChangeNotifier {
       );
 
       if (!response.isError && response.data != null) {
-        final freshData = response.data!
-            .where((c) {
-              final name = c.participantEmail.toLowerCase().trim();
-              return name != 'saved messages' && name != 'pesan tersimpan';
-            })
-            .toList();
+        final freshData = response.data!.where((c) {
+          final name = c.participantEmail.toLowerCase().trim();
+          return name != 'saved messages' && name != 'pesan tersimpan';
+        }).toList();
         final existingIds = _chats.map((c) => c.id).toSet();
 
         // Update existing chats yang datanya berubah
@@ -2033,16 +2171,27 @@ class ChatProvider with ChangeNotifier {
           chat = chat.copyWith(
             isPinned: chat.isPinned || _pinnedIds.contains(chat.id),
             isArchived: isArchived,
-            unreadCount: (chat.isLastMessageFromMe || PushNotificationService.currentRoomId == chat.id)
+            unreadCount:
+                (chat.isLastMessageFromMe ||
+                    PushNotificationService.currentRoomId == chat.id)
                 ? 0
                 : (_readIds.contains(chat.id)
-                    ? 0
-                    : (_localUnreadOverrides[chat.id] ?? chat.unreadCount)),
+                      ? 0
+                      : (_localUnreadOverrides[chat.id] ?? chat.unreadCount)),
           );
 
           final idx = _chats.indexWhere((c) => c.id == chat.id);
           if (idx != -1) {
             final oldChat = _chats[idx];
+            // ARSIP SHIELD: Pertahankan status arsip lokal agar tidak dibatalkan
+            // oleh data server (St: 1/2) pada saat refreshFirstPage.
+            if (oldChat.isArchived ||
+                isRoomArchived(oldChat.id) ||
+                isRoomArchived(chat.id)) {
+              _archivedIds.add(oldChat.id);
+              _archivedIds.add(chat.id);
+              chat = chat.copyWith(isArchived: true);
+            }
             // FIX: Pertahankan nama kontak yang sudah di-save secara lokal.
             if (oldChat.sender.isNotEmpty && oldChat.sender != chat.sender) {
               final isOldSenderANumber = RegExp(
@@ -2192,7 +2341,10 @@ class ChatProvider with ChangeNotifier {
             }
 
             // FIX: Cek apakah pesan terakhir adalah pesan yang baru kita kirim dari aplikasi ini
-            final bool isSentByMeRecently = isRecentMessageFromMe(chat.id, chat.lastMessage);
+            final bool isSentByMeRecently = isRecentMessageFromMe(
+              chat.id,
+              chat.lastMessage,
+            );
 
             if (isSentByMeRecently) {
               chat = chat.copyWith(
@@ -2201,7 +2353,8 @@ class ChatProvider with ChangeNotifier {
                 unreadCount: 0,
                 sdrMsg: 'me',
               );
-            } else if (!chat.isLastMessageFromMe && oldChat.isLastMessageFromMe) {
+            } else if (!chat.isLastMessageFromMe &&
+                oldChat.isLastMessageFromMe) {
               // FIX: Pewarisan isLastMessageFromMe dari cache lokal
               final newLower = chat.lastMessage.toLowerCase().trim();
               final oldLower = oldChat.lastMessage.toLowerCase().trim();
@@ -2221,7 +2374,10 @@ class ChatProvider with ChangeNotifier {
                 'lokasi',
                 'media',
               ].any((lbl) => oldLower.contains(lbl));
-              final isTextMatch = oldLower.isNotEmpty && newLower.isNotEmpty && newLower == oldLower; 
+              final isTextMatch =
+                  oldLower.isNotEmpty &&
+                  newLower.isNotEmpty &&
+                  newLower == oldLower;
               if (isTextMatch || (isMediaJSON && oldHasMediaLabel)) {
                 chat = chat.copyWith(
                   isLastMessageFromMe: true,
@@ -2232,7 +2388,8 @@ class ChatProvider with ChangeNotifier {
               }
             }
 
-            if (_recentIsMeFlags.containsKey(chat.id) && _recentIsMeFlags[chat.id] == true) {
+            if (_recentIsMeFlags.containsKey(chat.id) &&
+                _recentIsMeFlags[chat.id] == true) {
               chat = chat.copyWith(
                 isLastMessageFromMe: true,
                 needReply: false,
@@ -2302,105 +2459,108 @@ class ChatProvider with ChangeNotifier {
         }
 
         // Tambahkan kontak baru yang belum ada
-        final newChats = freshData
-            .where((c) => !existingIds.contains(c.toChatModel().id))
-            .map((c) {
-              var chat = c.toChatModel();
+        final newChats = freshData.where((c) => !existingIds.contains(c.toChatModel().id)).map((
+          c,
+        ) {
+          var chat = c.toChatModel();
 
-              // FIX: Resolve channelType dari ChId menggunakan account cache
-              if (chat.channelType.isEmpty && chat.chId.isNotEmpty) {
-                final resolvedCode = _resolveChannelCode(chat.chId);
-                if (resolvedCode.isNotEmpty) {
-                  chat = chat.copyWith(channelType: resolvedCode);
-                }
-              }
+          // FIX: Resolve channelType dari ChId menggunakan account cache
+          if (chat.channelType.isEmpty && chat.chId.isNotEmpty) {
+            final resolvedCode = _resolveChannelCode(chat.chId);
+            if (resolvedCode.isNotEmpty) {
+              chat = chat.copyWith(channelType: resolvedCode);
+            }
+          }
 
-              // Apply locally cached mapping for tags and funnel
-              chat = _applyTagAndFunnelMapping(chat, c);
+          // Apply locally cached mapping for tags and funnel
+          chat = _applyTagAndFunnelMapping(chat, c);
 
-              // Terapkan nama dari persistent storage (prioritas tertinggi)
-              final persistedName = _savedContactNames[chat.id];
-              if (persistedName != null && persistedName.isNotEmpty) {
-                chat = chat.copyWith(sender: persistedName);
-              }
-              chat = _applyAgentOverride(chat);
+          // Terapkan nama dari persistent storage (prioritas tertinggi)
+          final persistedName = _savedContactNames[chat.id];
+          if (persistedName != null && persistedName.isNotEmpty) {
+            chat = chat.copyWith(sender: persistedName);
+          }
+          chat = _applyAgentOverride(chat);
 
-              // FIX: Terapkan local overrides saat app baru load (Hot Restart)
-              if (_localOverrides.containsKey(chat.id)) {
-                final localChat = _localOverrides[chat.id]!;
-                final localTimeStr = localChat.time;
-                final localTime = DateTime.tryParse(
-                  localTimeStr.endsWith('Z')
-                      ? localTimeStr
-                      : '${localTimeStr}Z',
-                );
+          // FIX: Terapkan local overrides saat app baru load (Hot Restart)
+          if (_localOverrides.containsKey(chat.id)) {
+            final localChat = _localOverrides[chat.id]!;
+            final localTimeStr = localChat.time;
+            final localTime = DateTime.tryParse(
+              localTimeStr.endsWith('Z') ? localTimeStr : '${localTimeStr}Z',
+            );
 
-                final serverIsNewer = _isServerDataNewer(
-                  roomId: chat.id,
-                  serverTimeStr: chat.time,
-                  serverLastMsg: chat.lastMessage,
-                  localTime: localTime,
-                );
+            final serverIsNewer = _isServerDataNewer(
+              roomId: chat.id,
+              serverTimeStr: chat.time,
+              serverLastMsg: chat.lastMessage,
+              localTime: localTime,
+            );
 
-                if (!serverIsNewer) {
-                  // Server masih mengembalikan data lama, PERTAHANKAN override lokal
-                  chat = chat.copyWith(
-                    lastMessage: localChat.lastMessage,
-                    lastMessageType:
-                        localChat.lastMessageType ?? chat.lastMessageType,
-                    time: localChat.time,
-                    isLastMessageFromMe: localChat.isLastMessageFromMe,
-                  );
-                } else {
-                  // Override kadaluarsa, terima data server
-                  _localOverrides.remove(chat.id);
-                  _overrideTimestamps.remove(chat.id);
-                  _deletionTimestamps.remove(chat.id);
-                  _roomsWithDeletions.remove(chat.id);
-                  _saveLocalOverrides();
-                }
-              }
-
-              final oldIdx = _chats.indexWhere((c) => c.id == chat.id);
-              if (oldIdx != -1) {
-                bool isTimeDifferent = false;
-                try {
-                  final t1 = DateTime.parse(chat.time.endsWith('Z') ? chat.time : chat.time + 'Z');
-                  final t2 = DateTime.parse(_chats[oldIdx].time.endsWith('Z') ? _chats[oldIdx].time : _chats[oldIdx].time + 'Z');
-                  isTimeDifferent = t1.difference(t2).inSeconds.abs() > 0;
-                } catch (e) {
-                  isTimeDifferent = chat.time != _chats[oldIdx].time;
-                }
-
-                if (isTimeDifferent && chat.unreadCount > 0) {
-                  _readIds.remove(chat.id);
-                }
-              } else if (chat.unreadCount > 0) {
-                _readIds.remove(chat.id);
-              }
-
-              // Tidak boleh memaksa unreadCount = 1 untuk obrolan dari API List New,
-              // karena dapat menyebabkan obrolan lama yang sudah dibaca ikut muncul unread = 1.
-
-              if (chat.isPinned && !_pinnedIds.contains(chat.id)) {
-                // KONSISTEN: Tambahkan pinned chat baru ke AWAL (beginning) seperti togglePin
-                _pinnedIds = {chat.id, ..._pinnedIds};
-                _savePinnedState();
-              }
-
-              final isArchived = chat.isArchived || isRoomArchived(chat.id);
-              if (isArchived) {
-                _archivedIds.add(chat.id);
-              }
-              return chat.copyWith(
-                isPinned: chat.isPinned || _pinnedIds.contains(chat.id),
-                isArchived: isArchived,
-                unreadCount: _readIds.contains(chat.id)
-                    ? 0
-                    : (_localUnreadOverrides[chat.id] ?? chat.unreadCount),
+            if (!serverIsNewer) {
+              // Server masih mengembalikan data lama, PERTAHANKAN override lokal
+              chat = chat.copyWith(
+                lastMessage: localChat.lastMessage,
+                lastMessageType:
+                    localChat.lastMessageType ?? chat.lastMessageType,
+                time: localChat.time,
+                isLastMessageFromMe: localChat.isLastMessageFromMe,
               );
-            })
-            .toList();
+            } else {
+              // Override kadaluarsa, terima data server
+              _localOverrides.remove(chat.id);
+              _overrideTimestamps.remove(chat.id);
+              _deletionTimestamps.remove(chat.id);
+              _roomsWithDeletions.remove(chat.id);
+              _saveLocalOverrides();
+            }
+          }
+
+          final oldIdx = _chats.indexWhere((c) => c.id == chat.id);
+          if (oldIdx != -1) {
+            bool isTimeDifferent = false;
+            try {
+              final t1 = DateTime.parse(
+                chat.time.endsWith('Z') ? chat.time : chat.time + 'Z',
+              );
+              final t2 = DateTime.parse(
+                _chats[oldIdx].time.endsWith('Z')
+                    ? _chats[oldIdx].time
+                    : _chats[oldIdx].time + 'Z',
+              );
+              isTimeDifferent = t1.difference(t2).inSeconds.abs() > 0;
+            } catch (e) {
+              isTimeDifferent = chat.time != _chats[oldIdx].time;
+            }
+
+            if (isTimeDifferent && chat.unreadCount > 0) {
+              _readIds.remove(chat.id);
+            }
+          } else if (chat.unreadCount > 0) {
+            _readIds.remove(chat.id);
+          }
+
+          // Tidak boleh memaksa unreadCount = 1 untuk obrolan dari API List New,
+          // karena dapat menyebabkan obrolan lama yang sudah dibaca ikut muncul unread = 1.
+
+          if (chat.isPinned && !_pinnedIds.contains(chat.id)) {
+            // KONSISTEN: Tambahkan pinned chat baru ke AWAL (beginning) seperti togglePin
+            _pinnedIds = {chat.id, ..._pinnedIds};
+            _savePinnedState();
+          }
+
+          final isArchived = chat.isArchived || isRoomArchived(chat.id);
+          if (isArchived) {
+            _archivedIds.add(chat.id);
+          }
+          return chat.copyWith(
+            isPinned: chat.isPinned || _pinnedIds.contains(chat.id),
+            isArchived: isArchived,
+            unreadCount: _readIds.contains(chat.id)
+                ? 0
+                : (_localUnreadOverrides[chat.id] ?? chat.unreadCount),
+          );
+        }).toList();
 
         // ARSIP SHIELD: Jangan pernah menambahkan room yang sudah diarsipkan ke
         // daftar utama, bahkan jika server mengembalikannya tanpa status archived.
@@ -2419,7 +2579,8 @@ class ChatProvider with ChangeNotifier {
         final deletedRooms = _chats
             .where((c) {
               final lower = c.lastMessage.toLowerCase();
-              final isSystemOrPlaceholder = c.lastMessage == 'Site.Inbox.DeletedMessage' ||
+              final isSystemOrPlaceholder =
+                  c.lastMessage == 'Site.Inbox.DeletedMessage' ||
                   lower.contains('site.inbox.') ||
                   lower.contains('percakapan di-assign') ||
                   lower.contains('percakapan diselesaikan') ||
@@ -2639,7 +2800,8 @@ class ChatProvider with ChangeNotifier {
             'ChatProvider: ✅ Loaded ${_savedContactLocations.length} saved locations',
           );
         } catch (e) {
-          debugPrint('ChatProvider: ❌ Error decoding saved contact locations: $e',
+          debugPrint(
+            'ChatProvider: ❌ Error decoding saved contact locations: $e',
           );
         }
       }
@@ -2712,11 +2874,15 @@ class ChatProvider with ChangeNotifier {
   void _saveArchivedState({bool immediate = false}) {
     if (immediate) {
       _saveArchivedDebounce?.cancel();
-      SharedPreferences.getInstance().then((prefs) {
-        prefs.setString(_archivedKey, jsonEncode(_archivedIds.toList()));
-      }).catchError((e) {
-        debugPrint('ChatProvider: Failed to save archived state immediately: $e');
-      });
+      SharedPreferences.getInstance()
+          .then((prefs) {
+            prefs.setString(_archivedKey, jsonEncode(_archivedIds.toList()));
+          })
+          .catchError((e) {
+            debugPrint(
+              'ChatProvider: Failed to save archived state immediately: $e',
+            );
+          });
       return;
     }
     _saveArchivedDebounce?.cancel();
@@ -2781,6 +2947,11 @@ class ChatProvider with ChangeNotifier {
   /// Ambil data lokasi kontak yang disimpan secara lokal.
   Map<String, String>? getSavedContactLocation(String roomId) {
     return _savedContactLocations[roomId];
+  }
+
+  /// Ambil nama kontak yang disimpan secara lokal (optimistic save).
+  String? getSavedContactName(String roomId) {
+    return _savedContactNames[roomId];
   }
 
   /// Ambil URL avatar terbaru yang di-cache dari DetailRoom.
@@ -2902,8 +3073,12 @@ class ChatProvider with ChangeNotifier {
             lastMessageType: val['lastMessageType']?.toString(),
             time: val['time']?.toString() ?? '',
             isLastMessageFromMe: val['isLastMessageFromMe'] == true,
-            needReply: val['isLastMessageFromMe'] == true ? false : (val['needReply'] == true),
-            unreadCount: val['isLastMessageFromMe'] == true ? 0 : (val['unreadCount'] is int ? val['unreadCount'] : 0),
+            needReply: val['isLastMessageFromMe'] == true
+                ? false
+                : (val['needReply'] == true),
+            unreadCount: val['isLastMessageFromMe'] == true
+                ? 0
+                : (val['unreadCount'] is int ? val['unreadCount'] : 0),
           );
         }
       }
@@ -2989,9 +3164,8 @@ class ChatProvider with ChangeNotifier {
     if (_searchQuery.isNotEmpty) {
       filtered = filtered
           .where(
-            (chat) => chat.sender.toLowerCase().contains(
-              _searchQuery.toLowerCase(),
-            ),
+            (chat) =>
+                chat.sender.toLowerCase().contains(_searchQuery.toLowerCase()),
           )
           .toList();
     }
@@ -3069,8 +3243,7 @@ class ChatProvider with ChangeNotifier {
       filtered = filtered
           .where(
             (c) =>
-                c.ctRealId == _filterContact ||
-                c.contactId == _filterContact,
+                c.ctRealId == _filterContact || c.contactId == _filterContact,
           )
           .toList();
     }
@@ -3092,7 +3265,9 @@ class ChatProvider with ChangeNotifier {
 
     // Account fallback
     if (_filterAccountIds.isNotEmpty) {
-      filtered = filtered.where((c) => _filterAccountIds.contains(c.accountId)).toList();
+      filtered = filtered
+          .where((c) => _filterAccountIds.contains(c.accountId))
+          .toList();
     }
 
     // ── Jalur 2: Filters berikut di-remove dari payload API ─────────────────
@@ -3202,9 +3377,9 @@ class ChatProvider with ChangeNotifier {
   }
 
   List<ChatModel> get archivedChats {
-    return _chats.where((chat) =>
-        chat.isArchived || isRoomArchived(chat.id)
-    ).toList();
+    return _chats
+        .where((chat) => chat.isArchived || isRoomArchived(chat.id))
+        .toList();
   }
 
   void markAsRead(String chatId) {
@@ -3279,14 +3454,17 @@ class ChatProvider with ChangeNotifier {
       final statusLower = chat.status.toLowerCase();
       if (statusLower.contains('assign') || statusLower.contains('tugas')) {
         statusCode = 2; // Assigned / Ditugaskan
-      } else if (statusLower.contains('resolv') || statusLower.contains('selesai')) {
+      } else if (statusLower.contains('resolv') ||
+          statusLower.contains('selesai')) {
         statusCode = 3; // Resolved / Selesai
       }
 
       // Use SignalR for fast block/unblock (real-time), fallback to REST API if fails
       bool success = false;
       try {
-        debugPrint('ChatProvider: 🚫 Block/Unblock via SignalR: room=$roomId, contact=$contactId, isBlocked=$isBlocked');
+        debugPrint(
+          'ChatProvider: 🚫 Block/Unblock via SignalR: room=$roomId, contact=$contactId, isBlocked=$isBlocked',
+        );
         final signalR = SignalRService();
         success = await signalR.invokeBlockUnblock(
           roomId: roomId,
@@ -3295,13 +3473,17 @@ class ChatProvider with ChangeNotifier {
           shouldBlock: isBlocked,
         );
       } catch (e) {
-        debugPrint('ChatProvider: ❌ SignalR block/unblock failed, falling back to REST API: $e');
+        debugPrint(
+          'ChatProvider: ❌ SignalR block/unblock failed, falling back to REST API: $e',
+        );
         success = false;
       }
 
       // Fallback to REST API if SignalR failed
       if (!success) {
-        debugPrint('ChatProvider: 🚫 Falling back to REST API for block/unblock');
+        debugPrint(
+          'ChatProvider: 🚫 Falling back to REST API for block/unblock',
+        );
         final updateResponse = await _chatService.updateContactInfo(roomId, {
           'CtIsBlock': isBlocked ? 1 : 0,
           'IsBlock': isBlocked ? 1 : 0,
@@ -3339,12 +3521,14 @@ class ChatProvider with ChangeNotifier {
     final chIdStr = chat.chId.toString().trim();
     final chTypeStr = chat.channelType.toLowerCase();
     final chNameStr = chat.channelName.toLowerCase();
-    final isTelegram = chIdStr == '2' ||
+    final isTelegram =
+        chIdStr == '2' ||
         chTypeStr.contains('telegram') ||
         chTypeStr.contains('tg') ||
         chNameStr.contains('telegram') ||
         chNameStr.contains('tg');
-    final isWa = chIdStr == '1' ||
+    final isWa =
+        chIdStr == '1' ||
         chIdStr == '1557' ||
         chIdStr == '1561' ||
         chTypeStr.contains('whatsapp') ||
@@ -3361,8 +3545,12 @@ class ChatProvider with ChangeNotifier {
     }
 
     bool isCurrentAccActive = true;
-    if (_cachedAccounts != null && _cachedAccounts!.isNotEmpty && resolvedAccountId.isNotEmpty) {
-      final existing = _cachedAccounts!.where((a) => a['Id']?.toString() == resolvedAccountId).firstOrNull;
+    if (_cachedAccounts != null &&
+        _cachedAccounts!.isNotEmpty &&
+        resolvedAccountId.isNotEmpty) {
+      final existing = _cachedAccounts!
+          .where((a) => a['Id']?.toString() == resolvedAccountId)
+          .firstOrNull;
       if (existing != null) {
         isCurrentAccActive = isAccConnected(existing);
       }
@@ -3412,7 +3600,9 @@ class ChatProvider with ChangeNotifier {
               'Smart Fallback: Resolved AccId from active cached accounts -> $resolvedAccountId (${activeAcc['Name']})',
             );
           } else {
-            final anyConnected = _cachedAccounts!.where(isAccConnected).firstOrNull;
+            final anyConnected = _cachedAccounts!
+                .where(isAccConnected)
+                .firstOrNull;
             if (anyConnected != null && anyConnected['Id'] != null) {
               resolvedAccountId = anyConnected['Id'].toString();
             }
@@ -3424,25 +3614,46 @@ class ChatProvider with ChangeNotifier {
     }
     // --------------------------------
 
-    final bool isGroupChat = chat.isGroup ||
-        (chat.groupId.isNotEmpty && chat.groupId != '0' && chat.groupId != 'null') ||
-        (chat.groupName.isNotEmpty && chat.groupName != '0' && chat.groupName != 'null') ||
-        (isTelegram && (chat.groupId.startsWith('-') || chat.ctRealId.startsWith('-') || chat.link.startsWith('-') || chat.id.startsWith('-')));
+    final bool isGroupChat =
+        chat.isGroup ||
+        (chat.groupId.isNotEmpty &&
+            chat.groupId != '0' &&
+            chat.groupId != 'null') ||
+        (chat.groupName.isNotEmpty &&
+            chat.groupName != '0' &&
+            chat.groupName != 'null') ||
+        (isTelegram &&
+            (chat.groupId.startsWith('-') ||
+                chat.ctRealId.startsWith('-') ||
+                chat.link.startsWith('-') ||
+                chat.id.startsWith('-')));
 
     String? resolvedGroupId;
     String? idLinkValue;
 
     if (isGroupChat) {
       // GROUP CHAT: IdGroup harus diisi, dan IdLink harus NULL agar backend NoBox tidak memvalidasi IdLink ke kontak individu
-      if (chat.groupId.isNotEmpty && chat.groupId != '0' && chat.groupId != 'null') {
+      if (chat.groupId.isNotEmpty &&
+          chat.groupId != '0' &&
+          chat.groupId != 'null') {
         resolvedGroupId = chat.groupId;
-      } else if (isTelegram && chat.ctRealId.isNotEmpty && chat.ctRealId.startsWith('-')) {
+      } else if (isTelegram &&
+          chat.ctRealId.isNotEmpty &&
+          chat.ctRealId.startsWith('-')) {
         resolvedGroupId = chat.ctRealId;
-      } else if (isTelegram && chat.link.isNotEmpty && chat.link.startsWith('-')) {
+      } else if (isTelegram &&
+          chat.link.isNotEmpty &&
+          chat.link.startsWith('-')) {
         resolvedGroupId = chat.link;
-      } else if (chat.link.isNotEmpty && chat.link != '0' && chat.link != 'null' && !chat.link.contains('@s.whatsapp.net')) {
+      } else if (chat.link.isNotEmpty &&
+          chat.link != '0' &&
+          chat.link != 'null' &&
+          !chat.link.contains('@s.whatsapp.net')) {
         resolvedGroupId = chat.link;
-      } else if (chat.contactId.isNotEmpty && chat.contactId != '0' && chat.contactId != 'null' && !chat.contactId.contains('@s.whatsapp.net')) {
+      } else if (chat.contactId.isNotEmpty &&
+          chat.contactId != '0' &&
+          chat.contactId != 'null' &&
+          !chat.contactId.contains('@s.whatsapp.net')) {
         resolvedGroupId = chat.contactId;
       } else {
         resolvedGroupId = chat.id
@@ -3452,7 +3663,7 @@ class ChatProvider with ChangeNotifier {
       idLinkValue = null; // IMPORTANT: For group chat, IdLink MUST be null!
     } else {
       // PRIVATE CHAT (1-to-1): IdLink diisi dengan ID kontak (database ID)
-      
+
       // Helper: validasi bahwa string adalah ID yang valid
       bool isValidDbId(String s) {
         if (s.isEmpty || s == '0' || s == 'null') return false;
@@ -3460,7 +3671,7 @@ class ChatProvider with ChangeNotifier {
         final num = int.tryParse(clean);
         return num != null && num > 0;
       }
-      
+
       // Prioritas: link (IdLink) → ctRealId → contactId → strip dari chat.id
       if (isValidDbId(chat.link)) {
         idLinkValue = chat.link;
@@ -3479,10 +3690,9 @@ class ChatProvider with ChangeNotifier {
           idLinkValue = chat.link.isNotEmpty ? chat.link : chat.contactId;
         }
       }
-      
+
       resolvedGroupId = null;
     }
-
 
     // DEBUG: Dump semua field yang di-resolve untuk diagnosis pengiriman pesan
     debugPrint('ChatProvider: ┌── sendMessageViaSignalR DEBUG ──');
@@ -3503,7 +3713,9 @@ class ChatProvider with ChangeNotifier {
     debugPrint('ChatProvider: │ isGroupChat=$isGroupChat');
     debugPrint('ChatProvider: │ resolvedGroupId=$resolvedGroupId');
     debugPrint('ChatProvider: │ idLinkValue=$idLinkValue');
-    debugPrint('ChatProvider: │ type=$type, msg=${(msg ?? "").length > 30 ? msg!.substring(0, 30) + "..." : msg}');
+    debugPrint(
+      'ChatProvider: │ type=$type, msg=${(msg ?? "").length > 30 ? msg!.substring(0, 30) + "..." : msg}',
+    );
     debugPrint('ChatProvider: └──────────────────────────────');
 
     final cleanMsg = (msg ?? '').trim();
@@ -3525,7 +3737,8 @@ class ChatProvider with ChangeNotifier {
       idLink: idLinkValue, // Null untuk group, contactId integer untuk private
       idAccount: resolvedAccountId,
       idRoom: chat.id,
-      idGroup: resolvedGroupId, // Null untuk private, groupId integer untuk group
+      idGroup:
+          resolvedGroupId, // Null untuk private, groupId integer untuk group
       type: type,
       msg: msg,
       fileJson: fileJson,
@@ -3535,20 +3748,21 @@ class ChatProvider with ChangeNotifier {
       replyType: replyType,
       replyFiles: replyFiles,
     );
-    
+
     if (error != null) {
       debugPrint('ChatProvider: ❌ sendMessageViaSignalR FAILED: $error');
     } else {
       debugPrint('ChatProvider: ✅ sendMessageViaSignalR SUCCESS');
       updateLocalLastMessage(
         chat.id,
-        cleanMsg.isNotEmpty ? cleanMsg : (type == '3' ? '📷 Photo' : 'Pesan terkirim'),
+        cleanMsg.isNotEmpty
+            ? cleanMsg
+            : (type == '3' ? '📷 Photo' : 'Pesan terkirim'),
         isFromMe: true,
       );
     }
-    
-    return error;
 
+    return error;
   }
 
   /// Update block status from incoming SignalR TerimaBlockUnblock event.
@@ -3575,7 +3789,8 @@ class ChatProvider with ChangeNotifier {
   Future<void> toggleArchive(String chatId) async {
     final index = _chats.indexWhere((chat) => chat.id == chatId);
     final targetChat = index != -1 ? _chats[index] : null;
-    final currentlyArchived = isRoomArchived(chatId) || (targetChat?.isArchived ?? false);
+    final currentlyArchived =
+        isRoomArchived(chatId) || (targetChat?.isArchived ?? false);
     final newArchived = !currentlyArchived;
 
     // Simpan HANYA varian RoomId (bukan contactId/ctRealId) agar arsip TIDAK
@@ -3618,7 +3833,9 @@ class ChatProvider with ChangeNotifier {
         await _chatService.restoreArchived(chatId);
       }
     } catch (e) {
-      debugPrint('ChatProvider: Server archive/restore background sync error: $e');
+      debugPrint(
+        'ChatProvider: Server archive/restore background sync error: $e',
+      );
     }
   }
 
@@ -3631,14 +3848,19 @@ class ChatProvider with ChangeNotifier {
         for (final archivedConv in archivedResponse.data!) {
           final archivedChat = archivedConv.toChatModel();
           final numId = archivedChat.id.replaceAll(RegExp(r'[^0-9]'), '');
-          
+
           if (!_archivedIds.contains(archivedChat.id)) {
             _archivedIds.add(archivedChat.id);
             if (numId.isNotEmpty) _archivedIds.add(numId);
             hasChanges = true;
           }
 
-          final idx = _chats.indexWhere((c) => c.id == archivedChat.id || (numId.isNotEmpty && c.id.replaceAll(RegExp(r'[^0-9]'), '') == numId));
+          final idx = _chats.indexWhere(
+            (c) =>
+                c.id == archivedChat.id ||
+                (numId.isNotEmpty &&
+                    c.id.replaceAll(RegExp(r'[^0-9]'), '') == numId),
+          );
           if (idx != -1) {
             if (!_chats[idx].isArchived) {
               _chats[idx] = _chats[idx].copyWith(isArchived: true);
@@ -3776,6 +3998,10 @@ class ChatProvider with ChangeNotifier {
       'ChatProvider: updateContactInfo called | roomId=$contactId | data=$contactData',
     );
 
+    // Hapus cache DetailRoom agar ContactInfoPage memuat data terbaru (nama kontak)
+    // setelah proses edit selesai, sehingga UI bersifat realtime/reaktif.
+    _detailRoomCache.remove(contactId);
+
     // FIX: Saat mengedit nama atau info kontak, jika kontak tersebut tidak diblokir secara nyata,
     // kirimkan IsBlock/CtIsBlock=0 agar database server NoBox tidak mengunci nilai default CtIsBlock=1
     if (!contactData.containsKey('CtIsBlock') &&
@@ -3896,7 +4122,11 @@ class ChatProvider with ChangeNotifier {
   /// dikirim oleh pemanggil (id room, contactId/ctId, ctRealId, link, maupun
   /// ID angka bersih). Hal ini mengatasi kasus pencarian index yang terlalu
   /// kaku sehingga status tidak ter-update di UI secara real-time.
-  void updateChatStatus(String targetId, String newStatus, {String? agentName}) {
+  void updateChatStatus(
+    String targetId,
+    String newStatus, {
+    String? agentName,
+  }) {
     if (targetId.isEmpty) return;
     final cleanNumeric = targetId.replaceAll(RegExp(r'[^0-9]'), '');
 

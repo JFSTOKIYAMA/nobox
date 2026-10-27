@@ -42,13 +42,14 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       await localNotifications.initialize(initSettings);
 
       const androidDetails = AndroidNotificationDetails(
-        'nobox_chat_channel',
-        'Nobox Chat',
+        'chat_notifications',
+        'Chat Notifications',
         channelDescription: 'Pemberitahuan pesan masuk Nobox',
         importance: Importance.max,
         priority: Priority.high,
         styleInformation: DefaultStyleInformation(true, true), // Agar teks panjang tidak terpotong
         category: AndroidNotificationCategory.message,
+        visibility: NotificationVisibility.public, // Tampil jelas di lock screen
       );
       const iosDetails = DarwinNotificationDetails(
         presentAlert: true,
@@ -140,6 +141,7 @@ class PushNotificationService {
       playSound: true,
       enableVibration: true,
       enableLights: true,
+      showBadge: true,
     );
 
     await _localNotifications
@@ -321,11 +323,13 @@ class PushNotificationService {
         'chat_notifications',
         'Chat Notifications',
         channelDescription: 'Notifications for new chat messages',
-        importance: Importance.max,
-        priority: Priority.max,
+        importance: Importance.max, // Heads-up (melayang)
+        priority: Priority.high,
         showWhen: true,
         enableVibration: true,
         enableLights: true,
+        category: AndroidNotificationCategory.message,
+        visibility: NotificationVisibility.public, // Tampil jelas di lock screen
         color: const Color(0xFF3B82F6),
         largeIcon: largeIcon,
         styleInformation: bigTextStyle,

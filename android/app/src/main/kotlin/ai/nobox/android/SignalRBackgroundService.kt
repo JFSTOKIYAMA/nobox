@@ -51,6 +51,13 @@ class SignalRBackgroundService : Service() {
         private const val CONNECT_TIMEOUT_SECONDS = 15L
         private const val STOP_TIMEOUT_SECONDS = 5L
 
+        // Referensi instance service yang aktif, dipakai untuk sinkronisasi token
+        // yang baru di-refresh dari Flutter (ApiClient) agar background service
+        // selalu menggunakan JWT yang masih valid.
+        @Volatile
+        var instance: SignalRBackgroundService? = null
+            private set
+
         fun startService(context: Context, token: String, userId: String, tenantId: String) {
             val intent = Intent(context, SignalRBackgroundService::class.java).apply {
                 action = ACTION_START
@@ -70,6 +77,22 @@ class SignalRBackgroundService : Service() {
             // tidak terkena larangan start service dari background di Android 8+.
             context.stopService(Intent(context, SignalRBackgroundService::class.java))
         }
+
+        /**
+         * Dipanggil Flutter (via MethodChannel) saat token di-refresh oleh ApiClient.
+         * Token terbaru dipersist ke SharedPreferences agar koneksi yang di-restore
+         * oleh OS (START_STICKY) juga memakai token aktif.
+         */
+        fun updateToken(context: Context, token: String) {
+            try {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                    .putString(KEY_TOKEN, token)
+                    .apply()
+            } catch (e: Exception) {
+                Log.w(TAG, "updateToken persist failed: ${e.message}")
+            }
+            instance?.refreshTokenAndReconnect(token)
+        }
     }
 
     // Semua pekerjaan SignalR berjalan di worker thread tunggal.
@@ -79,19 +102,21 @@ class SignalRBackgroundService : Service() {
     @Volatile private var isConnecting = false
 
     private var hubConnection: HubConnection? = null
-    private var token: String? = null
+    @Volatile private var token: String? = null
     private var userId: String = "1"
     private var tenantId: String = ""
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         isServiceActive = true
         createNotificationChannels()
         acquireWakeLock()
     }
 
     override fun onDestroy() {
+        if (instance === this) instance = null
         isServiceActive = false
         releaseWakeLock()
         try {
@@ -114,7 +139,7 @@ class SignalRBackgroundService : Service() {
 
                 // startForeground() WAJIB dipanggil cepat di main thread,
                 // tetapi koneksi SignalR-nya dijalankan di worker thread.
-                startForeground(NOTIFICATION_ID, createServiceNotification("Menghubungkan..."))
+                startForeground(NOTIFICATION_ID, createServiceNotification())
                 worker.execute { startSignalRListener() }
             }
 
@@ -133,7 +158,7 @@ class SignalRBackgroundService : Service() {
                     stopSelf()
                     return START_NOT_STICKY
                 }
-                startForeground(NOTIFICATION_ID, createServiceNotification("Menyambungkan ulang..."))
+                startForeground(NOTIFICATION_ID, createServiceNotification())
                 worker.execute { startSignalRListener() }
             }
         }
@@ -163,6 +188,24 @@ class SignalRBackgroundService : Service() {
         }
     }
 
+    /**
+     * Sinkronisasi token terbaru dari Flutter. Jika koneksi sedang aktif dengan
+     * token lama, putus lalu sambungkan ulang memakai token baru.
+     * Dipanggil dari companion object (bisa lintas thread).
+     */
+    private fun refreshTokenAndReconnect(newToken: String) {
+        token = newToken
+        Log.d(TAG, "Token JWT diperbarui dari Flutter. Memulai ulang koneksi background.")
+        try {
+            worker.execute {
+                stopSignalRListener()
+                startSignalRListener()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "refreshTokenAndReconnect failed: ${e.message}")
+        }
+    }
+
     /** Dijalankan di worker thread — jangan pernah dipanggil dari main thread. */
     private fun startSignalRListener() {
         if (!isServiceActive || isConnecting) return
@@ -173,6 +216,13 @@ class SignalRBackgroundService : Service() {
 
         isConnecting = true
         try {
+            // Validasi token: token kosong/expired membuat server membalas 401/redirect
+            // HTML yang memicu error "An invalid handshake response was received".
+            if (token.isNullOrBlank()) {
+                Log.w(TAG, "Token JWT kosong/belum ada. Menunda koneksi SignalR background sampai token valid tersedia.")
+                return
+            }
+
             hubConnection = HubConnectionBuilder.create("https://id.nobox.ai/messagehub")
                 .withAccessTokenProvider(Single.defer { Single.just(token ?: "") })
                 .build()
@@ -198,7 +248,6 @@ class SignalRBackgroundService : Service() {
                         ?.timeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                         ?.blockingAwait()
                     Log.d(TAG, "CONNECTED! id=${hubConnection?.connectionId}")
-                    updateServiceNotification("Tersambung / Aktif")
 
                     // Wajib Subscribe User agar backend mengirimkan event TerimaPesan
                     if (userId.isNotEmpty() && tenantId.isNotEmpty()) {
@@ -214,21 +263,25 @@ class SignalRBackgroundService : Service() {
                     return // Berhasil, keluar dari loop
                 } catch (e: Exception) {
                     Log.e(TAG, "Connection attempt ${attempt + 1} FAILED: ${e.message}")
+                    if (isHandshakeOrAuthError(e)) {
+                        Log.w(TAG, "SignalR handshake failed (likely expired token): ${e.message}. Menghentikan retry agar tidak membuang baterai.")
+                        break
+                    }
                     if (attempt < maxRetries && isServiceActive) {
                         val delay = retryDelays[attempt]
                         Log.d(TAG, "Retrying in ${delay / 1000}s...")
-                        updateServiceNotification("Retry ${attempt + 2}...")
                         // Aman: kita sedang di worker thread, bukan main thread.
                         Thread.sleep(delay)
                     } else {
                         Log.e(TAG, "All connection attempts failed!")
-                        updateServiceNotification("Gagal: ${e.message?.take(40)}")
                     }
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Connection setup FAILED: ${e.message}")
-            updateServiceNotification("Gagal: ${e.message?.take(40)}")
+            if (isHandshakeOrAuthError(e)) {
+                Log.w(TAG, "SignalR handshake failed (likely expired token): ${e.message}")
+            }
         } finally {
             isConnecting = false
         }
@@ -299,16 +352,16 @@ class SignalRBackgroundService : Service() {
             )
 
             val notif = NotificationCompat.Builder(this, CHAT_CHANNEL_ID)
-                .setSmallIcon(R.mipmap.launcher_icon)
+                .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle(if (roomName.isNotEmpty()) roomName else "Pesan Baru")
                 .setContentText(messageText)
-                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(messageText)) // Teks pesan panjang bisa di-expand
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setDefaults(Notification.DEFAULT_ALL)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setContentIntent(pi)
                 .setAutoCancel(true)
-                .setFullScreenIntent(pi, true) // Tembus MIUI lock screen
                 .build()
 
             val uniqueId = (System.currentTimeMillis() % 100000).toInt() + 2000
@@ -342,14 +395,26 @@ class SignalRBackgroundService : Service() {
         Log.d(TAG, "WakeLock released")
     }
 
+    private fun isHandshakeOrAuthError(e: Exception): Boolean {
+        val msg = e.message ?: return false
+        return msg.contains("handshake", ignoreCase = true) ||
+            msg.contains("401", ignoreCase = true) ||
+            msg.contains("Unauthorized", ignoreCase = true)
+    }
+
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
                 val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                // Low-priority service channel
+                // Channel service senyap: tidak bergetar, tidak berbunyi, dan tersembunyi dari lock screen.
                 mgr.createNotificationChannel(NotificationChannel(
-                    CHANNEL_ID, "SignalR Background", NotificationManager.IMPORTANCE_LOW
-                ))
+                    CHANNEL_ID, "SignalR Background", NotificationManager.IMPORTANCE_MIN
+                ).apply {
+                    lockscreenVisibility = Notification.VISIBILITY_SECRET
+                    setShowBadge(false)
+                    enableVibration(false)
+                    enableLights(false)
+                })
                 // High-priority chat channel
                 mgr.createNotificationChannel(NotificationChannel(
                     CHAT_CHANNEL_ID, "Chat Notifications", NotificationManager.IMPORTANCE_HIGH
@@ -364,25 +429,17 @@ class SignalRBackgroundService : Service() {
         }
     }
 
-    private fun createServiceNotification(text: String): Notification {
+    private fun createServiceNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Nobox Chat")
-            .setContentText(text)
-            .setSmallIcon(R.mipmap.launcher_icon)
+            .setContentText("Layanan chat aktif di latar belakang")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setOngoing(true)
-            .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
-    }
-
-    private fun updateServiceNotification(text: String) {
-        try {
-            val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            mgr.notify(NOTIFICATION_ID, createServiceNotification(text))
-        } catch (e: Exception) {
-            Log.w(TAG, "updateServiceNotification failed: ${e.message}")
-        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

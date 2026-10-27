@@ -34,6 +34,11 @@ class MainActivity: FlutterActivity() {
                         SignalRBackgroundService.stopService(this)
                         result.success(true)
                     }
+                    "updateToken" -> {
+                        val token = call.argument<String>("token") ?: ""
+                        SignalRBackgroundService.updateToken(this, token)
+                        result.success(true)
+                    }
                     else -> {
                         result.notImplemented()
                     }

@@ -41,10 +41,11 @@ class BackgroundServiceManager {
           final payload = base64Url.normalize(parts[1]);
           final decoded = utf8.decode(base64Url.decode(payload));
           final payloadMap = jsonDecode(decoded);
-          userId = payloadMap['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier']
-              ?? payloadMap['nameid']
-              ?? payloadMap['sub']
-              ?? '1';
+          userId =
+              payloadMap['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] ??
+              payloadMap['nameid'] ??
+              payloadMap['sub'] ??
+              '1';
         }
       } catch (e) {
         debugPrint('BackgroundServiceManager: Failed to decode JWT: $e');
@@ -56,13 +57,41 @@ class BackgroundServiceManager {
         'tenantId': tenantId,
       });
       _isRunning = true;
-      debugPrint('BackgroundServiceManager: ✅ Background service started. userId: $userId, tenantId: $tenantId');
+      debugPrint(
+        'BackgroundServiceManager: ✅ Background service started. userId: $userId, tenantId: $tenantId',
+      );
     } on PlatformException catch (e) {
       debugPrint('BackgroundServiceManager: ❌ PlatformException: ${e.message}');
     } on MissingPluginException {
-      debugPrint('BackgroundServiceManager: ⚠️ MethodChannel not available (not on Android?).');
+      debugPrint(
+        'BackgroundServiceManager: ⚠️ MethodChannel not available (not on Android?).',
+      );
     } catch (e) {
       debugPrint('BackgroundServiceManager: ❌ Error starting service: $e');
+    }
+  }
+
+  /// Sinkronkan token JWT terbaru ke background service native.
+  /// Dipanggil saat ApiClient berhasil me-refresh token, agar koneksi SignalR
+  /// background selalu memakai token aktif (menghindari error handshake 401).
+  static Future<void> updateToken(String token) async {
+    if (token.isEmpty) return;
+
+    try {
+      await _channel.invokeMethod('updateToken', {'token': token});
+      debugPrint(
+        'BackgroundServiceManager: 🔄 Token JWT diperbarui ke background service.',
+      );
+    } on PlatformException catch (e) {
+      debugPrint(
+        'BackgroundServiceManager: ❌ PlatformException (updateToken): ${e.message}',
+      );
+    } on MissingPluginException {
+      debugPrint(
+        'BackgroundServiceManager: ⚠️ MethodChannel not available (not on Android?).',
+      );
+    } catch (e) {
+      debugPrint('BackgroundServiceManager: ❌ Error updating token: $e');
     }
   }
 
@@ -75,7 +104,9 @@ class BackgroundServiceManager {
     try {
       await _channel.invokeMethod('stopBackgroundService');
       _isRunning = false;
-      debugPrint('BackgroundServiceManager: 🛑 Background service stopped${force ? " (forced)" : ""}.');
+      debugPrint(
+        'BackgroundServiceManager: 🛑 Background service stopped${force ? " (forced)" : ""}.',
+      );
     } on PlatformException catch (e) {
       debugPrint('BackgroundServiceManager: ❌ PlatformException: ${e.message}');
     } on MissingPluginException {

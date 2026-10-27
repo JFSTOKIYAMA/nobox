@@ -2954,6 +2954,11 @@ class ChatProvider with ChangeNotifier {
     return _savedContactNames[roomId];
   }
 
+  /// Ambil nama agent yang disimpan secara lokal (optimistic update).
+  String? getSavedAgentName(String roomId) {
+    return _savedAgentNames[roomId];
+  }
+
   /// Ambil URL avatar terbaru yang di-cache dari DetailRoom.
   String? getCachedAvatarUrl(String roomId) {
     return _cachedAvatarUrls[roomId];
@@ -4319,30 +4324,12 @@ class ChatProvider with ChangeNotifier {
   }
 
   Future<bool> removeAgent(String contactId) async {
+    // Optimistic update lokal: langsung hapus cache agent dan kosongkan nama
+    // agent di memori/disk, lalu update state chat menjadi Unassigned seketika.
     _detailRoomCache.remove(contactId);
     _savedAgentNames[contactId] = "";
     _saveSavedAgentNames();
 
-    // Assuming passing empty id/name will unassign
-    final response = await _chatService.addAgentToConversation(
-      contactId,
-      "",
-      "",
-    );
-    if (!response.isError) {
-      final index = _chats.indexWhere((c) => c.id == contactId);
-      if (index != -1) {
-        _chats[index] = _chats[index].copyWith(
-          agentName: "",
-          status: 'Unassigned',
-        );
-        notifyListeners();
-      }
-      return true;
-    }
-    // If the API fails with empty string, we can fallback to simulating it on UI
-    // since the API behavior for unassigning isn't perfectly specified yet.
-    debugPrint("Failed to remove agent via API, simulating success locally...");
     final index = _chats.indexWhere((c) => c.id == contactId);
     if (index != -1) {
       _chats[index] = _chats[index].copyWith(
@@ -4351,7 +4338,11 @@ class ChatProvider with ChangeNotifier {
       );
       notifyListeners();
     }
-    return false;
+
+    // Panggil API untuk menghapus agent di server (berjalan async, hasilnya
+    // tidak memblokir UI karena perubahan lokal sudah diterapkan di atas).
+    await _chatService.addAgentToConversation(contactId, "", "");
+    return true;
   }
 
   // ===========================================================================

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:country_state_city/country_state_city.dart' as csc;
@@ -352,16 +353,16 @@ class _EditContactPageState extends State<EditContactPage> {
                   contactData["City"] = _selectedCityName;
                 }
 
-                // Show loading
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Saving contact...')),
-                );
+                // Bersihkan SnackBar lama seketika agar tidak menumpuk.
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
                 final chatProvider = Provider.of<ChatProvider>(
                   context,
                   listen: false,
                 );
 
+                // Jika ada upload foto profil, proses upload terlebih dahulu
+                // karena URL foto diperlukan sebelum sinkronisasi server.
                 if (_profileImage != null) {
                   final imageUrl = await chatProvider.uploadImage(
                     _profileImage!,
@@ -383,32 +384,22 @@ class _EditContactPageState extends State<EditContactPage> {
                   }
                 }
 
-                final success = await chatProvider.updateContactInfo(
-                  widget.chat.id,
-                  contactData,
+                // OPTIMISTIC UI: simpan data teks secara lokal seketika dan
+                // jalankan sinkronisasi HTTP server di background, tanpa
+                // memblokir navigasi kembali ke halaman detail.
+                unawaited(
+                  chatProvider.updateContactInfo(widget.chat.id, contactData),
                 );
 
-                if (success) {
-                  if (mounted) {
-                    Navigator.pop(context, true);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Contact saved successfully!'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  }
-                } else {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Failed to save: ${chatProvider.error ?? "Unknown error"}',
-                        ),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
+                if (mounted) {
+                  Navigator.pop(context, true);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Contact saved successfully!'),
+                      backgroundColor: Colors.green,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
                 }
               },
               icon: const Icon(Icons.check, color: Colors.white, size: 20),

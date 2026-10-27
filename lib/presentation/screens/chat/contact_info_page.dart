@@ -85,7 +85,12 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
     _currentDeal = '';
     _currentFormTemplate = '';
     _currentFormResult = '';
-    _currentAgentName = widget.chat.agentName;
+    _currentAgentName =
+        Provider.of<ChatProvider>(
+          context,
+          listen: false,
+        ).getSavedAgentName(widget.chat.id) ??
+        widget.chat.agentName;
     _currentAvatarUrl = widget.chat.avatarUrl;
     _currentContactName =
         Provider.of<ChatProvider>(
@@ -453,7 +458,13 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
 
         // Extract Agent info from RoomAgents if available
         try {
-          if (roomData['RoomAgents'] != null &&
+          final savedAgent = chatProvider.getSavedAgentName(widget.chat.id);
+          if (savedAgent != null) {
+            // Jika agent sudah dihapus/di-unassign secara optimistik, savedAgent
+            // akan berupa string kosong dan email harus ikut dikosongkan.
+            _currentAgentName = savedAgent;
+            if (savedAgent.isEmpty) _agentEmail = '';
+          } else if (roomData['RoomAgents'] != null &&
               roomData['RoomAgents'] is List &&
               (roomData['RoomAgents'] as List).isNotEmpty) {
             final firstAgent = (roomData['RoomAgents'] as List)[0];
@@ -462,6 +473,9 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
             if (serverAgentName.isNotEmpty) {
               _currentAgentName = serverAgentName;
             }
+          } else {
+            _currentAgentName = '';
+            _agentEmail = '';
           }
           // Extract Account name from Account data
           if (roomData['Account'] != null && roomData['Account'] is Map) {
@@ -3244,11 +3258,81 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                             : null,
                         trailing: InkWell(
                           onTap: () async {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Removing agent...'),
-                              ),
+                            // 1. Tampilkan Dialog Konfirmasi (2 Langkah)
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) {
+                                final isDarkDialog =
+                                    Theme.of(ctx).brightness == Brightness.dark;
+                                return AlertDialog(
+                                  backgroundColor: isDarkDialog
+                                      ? const Color(0xFF1F2C34)
+                                      : Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  title: Text(
+                                    'Hapus Human Agent',
+                                    style: TextStyle(
+                                      color: isDarkDialog
+                                          ? Colors.white
+                                          : Colors.black87,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                    ),
+                                  ),
+                                  content: Text(
+                                    'Apakah Anda yakin ingin menghapus ${_currentAgentName.isNotEmpty ? _currentAgentName : "agen"} dari percakapan ini?',
+                                    style: TextStyle(
+                                      color: isDarkDialog
+                                          ? Colors.grey.shade300
+                                          : Colors.black87,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(ctx, false),
+                                      child: Text(
+                                        'Batal',
+                                        style: TextStyle(
+                                          color: isDarkDialog
+                                              ? Colors.grey.shade400
+                                              : Colors.grey.shade600,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () => Navigator.pop(ctx, true),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red.shade600,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        elevation: 0,
+                                      ),
+                                      child: const Text(
+                                        'Oke',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
                             );
+
+                            // Jika user klik Batal atau menutup dialog, jangan lanjutkan
+                            if (confirm != true) return;
+
+                            // 2. Eksekusi Hapus Agent
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
                             final chatProvider = Provider.of<ChatProvider>(
                               context,
                               listen: false,
@@ -3256,18 +3340,87 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                             final success = await chatProvider.removeAgent(
                               widget.chat.id,
                             );
-                            if (success) {
+
+                            // 3. Tampilkan Notifikasi Melayang (Floating, Berwarna Jelas & Tidak Mentok di Bawah)
+                            if (success && mounted) {
                               setState(() {
                                 _currentAgentName = '';
                                 _agentEmail = '';
                               });
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Agent removed')),
+                                SnackBar(
+                                  content: const Row(
+                                    children: [
+                                      Icon(
+                                        Icons.check_circle,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          'Successfully removed agent',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  backgroundColor: const Color(
+                                    0xFF2E7D32,
+                                  ), // Hijau solid
+                                  behavior: SnackBarBehavior.floating,
+                                  margin: const EdgeInsets.only(
+                                    bottom: 40,
+                                    left: 20,
+                                    right: 20,
+                                  ), // Melayang elegan di atas bawah layar
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: 6,
+                                  duration: const Duration(seconds: 2),
+                                ),
                               );
-                            } else {
+                            } else if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Failed to remove agent'),
+                                SnackBar(
+                                  content: const Row(
+                                    children: [
+                                      Icon(
+                                        Icons.error_outline,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          'Failed to remove agent',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  backgroundColor:
+                                      Colors.red.shade600, // Merah solid
+                                  behavior: SnackBarBehavior.floating,
+                                  margin: const EdgeInsets.only(
+                                    bottom: 40,
+                                    left: 20,
+                                    right: 20,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: 6,
+                                  duration: const Duration(seconds: 3),
                                 ),
                               );
                             }
@@ -3779,14 +3932,76 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                             }
                             ScaffoldMessenger.of(this.context).showSnackBar(
                               SnackBar(
-                                content: Text(
-                                  'Successfully assigned to $agentName',
+                                content: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.check_circle,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        'Successfully assigned to $agentName',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
+                                backgroundColor: const Color(0xFF2E7D32),
+                                behavior: SnackBarBehavior.floating,
+                                margin: const EdgeInsets.only(
+                                  bottom: 40,
+                                  left: 20,
+                                  right: 20,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 6,
+                                duration: const Duration(seconds: 2),
                               ),
                             );
                           } else {
                             ScaffoldMessenger.of(this.context).showSnackBar(
-                              SnackBar(content: Text('Failed to assign agent')),
+                              SnackBar(
+                                content: const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.error_outline,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        'Failed to assign agent',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                backgroundColor: Colors.red.shade600,
+                                behavior: SnackBarBehavior.floating,
+                                margin: const EdgeInsets.only(
+                                  bottom: 40,
+                                  left: 20,
+                                  right: 20,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 6,
+                                duration: const Duration(seconds: 3),
+                              ),
                             );
                           }
                         },

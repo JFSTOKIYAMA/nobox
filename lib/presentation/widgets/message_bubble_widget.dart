@@ -595,9 +595,10 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
     bool isMe,
     bool isDarkMode,
   ) {
-    // Issue 4: pesan edit/protocol/document(empty)/file kosong → render miring redup
-    if (isUnsupportedWhatsAppContent(widget.message.content) ||
-        widget.message.content == kUnsupportedWhatsAppLabel) {
+    // HANYA cek unsupported untuk pesan bertipe teks. Voice note, gambar, & media lainnya TIDAK boleh dicegat!
+    if (widget.message.messageType == MessageType.text &&
+        (isUnsupportedWhatsAppContent(widget.message.content) ||
+            widget.message.content == kUnsupportedWhatsAppLabel)) {
       return _buildUnsupportedMessage(isMe, isDarkMode);
     }
 

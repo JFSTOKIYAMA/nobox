@@ -4177,7 +4177,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       content: displayContent,
       isMe: true,
       time: timeString,
-      rawTime: now.toUtc().toIso8601String(), // Wajib ada ISO string agar urutan bubble stabil
+      rawTime: now
+          .toUtc()
+          .toIso8601String(), // Wajib ada ISO string agar urutan bubble stabil
       status: MessageStatus.sent,
       messageType: isStickerFile ? MessageType.sticker : MessageType.video,
       // Selalu pasang path lokal agar video dapat langsung di-preview.
@@ -4233,7 +4235,8 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         setState(() {
           _messages[messageIndex] = _messages[messageIndex].copyWith(
             status: MessageStatus.delivered,
-            videoUrl: response.data ?? pickedFile.path, // FIX: Simpan URL dari server
+            videoUrl:
+                response.data ?? pickedFile.path, // FIX: Simpan URL dari server
             ack: 2,
           );
         });
@@ -4250,7 +4253,8 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           prevLastMessage,
           overrideTime: prevTime,
           lastMessageType: prevLastMessageType,
-          updateTimeAndPosition: false, // Pertahankan posisinya seperti sebelumnya
+          updateTimeAndPosition:
+              false, // Pertahankan posisinya seperti sebelumnya
         );
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -4270,7 +4274,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             backgroundColor: Colors.redAccent,
             behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.only(bottom: 40, left: 20, right: 20),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         );
       }
@@ -4357,12 +4363,14 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     final chIdStr = chat.chId.toString().trim();
     final chTypeStr = chat.channelType.toLowerCase();
     final chNameStr = chat.channelName.toLowerCase();
-    final isTelegram = chIdStr == '2' ||
+    final isTelegram =
+        chIdStr == '2' ||
         chTypeStr.contains('telegram') ||
         chTypeStr.contains('tg') ||
         chNameStr.contains('telegram') ||
         chNameStr.contains('tg');
-    final isWa = chIdStr == '1' ||
+    final isWa =
+        chIdStr == '1' ||
         chIdStr == '1557' ||
         chIdStr == '1561' ||
         chTypeStr.contains('whatsapp') ||
@@ -4652,8 +4660,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       );
       try {
         final isGroupChat =
-            chat.isGroup ||
-            (chat.groupId.isNotEmpty && chat.groupId != '0');
+            chat.isGroup || (chat.groupId.isNotEmpty && chat.groupId != '0');
 
         final resolvedGroupId = isGroupChat ? chat.groupId : null;
 
@@ -4707,11 +4714,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         Provider.of<ChatProvider>(
           context,
           listen: false,
-        ).updateLocalLastMessage(
-          chat.id,
-          locationText,
-          isFromMe: true,
-        );
+        ).updateLocalLastMessage(chat.id, locationText, isFromMe: true);
       }
     } else if (mounted && messageIndex < _messages.length) {
       setState(() {
@@ -4856,14 +4859,21 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     try {
       if (await _audioRecorder.hasPermission()) {
         final dir = await getTemporaryDirectory();
+        // Always use AAC-LC encoder and .mp3 extension for WhatsApp compatibility.
+        // WhatsApp recipients should see 'voice note.mp3' with an MP3 badge,
+        // not .opus or .m4a or a generic BIN document.
+        const encoder = AudioEncoder.aacLc;
+        const ext = 'mp3';
         final path =
-            '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+            '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.$ext';
 
-        debugPrint('Recording: Starting recording to $path');
+        debugPrint(
+          'Recording: Starting recording to $path with encoder $encoder',
+        );
 
         await _audioRecorder.start(
           const RecordConfig(
-            encoder: AudioEncoder.aacLc,
+            encoder: encoder,
             bitRate: 128000,
             sampleRate: 44100,
           ),
@@ -4958,6 +4968,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         messageType: MessageType.voice,
         audioPath: path,
         audioDuration: duration,
+        documentName: 'voice note.mp3',
       );
       final chatProvider = Provider.of<ChatProvider>(context, listen: false);
 
@@ -4980,6 +4991,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       final response = await _chatService.sendImageMessage(
         chat.id,
         path,
+        customFileName: 'voice note.mp3',
         accountId: _getResolvedAccountId(chatProvider),
         channelId: _isTelegramChat ? '2' : chat.chId,
         contactId:

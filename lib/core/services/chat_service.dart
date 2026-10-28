@@ -10,6 +10,7 @@ import '../model/conversation.dart';
 import '../model/message.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http_parser/http_parser.dart';
 import 'signalr_service.dart';
 import '../model/quick_reply_model.dart';
 
@@ -2349,6 +2350,33 @@ class ChatService {
     }
   }
 
+  /// Parse a MIME string (e.g. "audio/ogg; codecs=opus") into a [MediaType]
+  /// suitable for Dio's [MultipartFile.contentType].
+  MediaType? _parseMediaType(String mime) {
+    if (mime.isEmpty) return null;
+    try {
+      final parts = mime.split(';');
+      final typeSubtype = parts.first.trim();
+      final slashIndex = typeSubtype.indexOf('/');
+      if (slashIndex <= 0 || slashIndex == typeSubtype.length - 1) {
+        return null;
+      }
+      final type = typeSubtype.substring(0, slashIndex).trim();
+      final subtype = typeSubtype.substring(slashIndex + 1).trim();
+      if (type.isEmpty || subtype.isEmpty) return null;
+      final params = <String, String>{};
+      for (final part in parts.skip(1)) {
+        final kv = part.trim().split('=');
+        if (kv.length == 2 && kv[0].trim().isNotEmpty) {
+          params[kv[0].trim()] = kv[1].trim();
+        }
+      }
+      return MediaType(type, subtype, params.isEmpty ? null : params);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Send an image message: upload file then send the URL as message body
   Future<ApiResponse<String>> sendImageMessage(
     String conversationId,
@@ -2359,6 +2387,7 @@ class ChatService {
     String? link, // IdLink for SignalR (LinkTmp/LinkNm from conversation)
     String? groupId,
     bool forceDocument = false,
+    String? customFileName,
   }) async {
     try {
       final normalizedPath = filePath.replaceAll('/', Platform.pathSeparator);
@@ -2379,10 +2408,27 @@ class ChatService {
       }
 
       final bytes = await file.readAsBytes();
-      String fileName = normalizedPath.split(Platform.pathSeparator).last;
+      String fileName =
+          customFileName ?? normalizedPath.split(Platform.pathSeparator).last;
       String extension = fileName.contains('.')
           ? fileName.split('.').last.toLowerCase()
           : 'jpg';
+
+      // If this is an audio/voice note file and the customFileName is not set,
+      // override the name to 'voice note.mp3' so WhatsApp recipients see it correctly.
+      if (customFileName == null || customFileName.isEmpty) {
+        if (extension == 'mp3' ||
+            extension == 'm4a' ||
+            extension == 'wav' ||
+            extension == 'ogg' ||
+            extension == 'opus' ||
+            extension == 'aac' ||
+            extension == 'amr' ||
+            extension == 'weba') {
+          fileName = 'voice note.mp3';
+          extension = 'mp3';
+        }
+      }
 
       // Determine BodyType based on file extension
       int bodyType = 3; // Default to Image
@@ -2482,8 +2528,14 @@ class ChatService {
             '--- MULTIPART UPLOAD START: file=$fileName size=${(bytes.length / 1024).toStringAsFixed(1)}KB ---',
           );
 
+          final String mimeForUpload = _getMimeType(fileName);
+          final MediaType? mediaType = _parseMediaType(mimeForUpload);
           final formData = FormData.fromMap({
-            'file': await MultipartFile.fromFile(filePath, filename: fileName),
+            'file': await MultipartFile.fromFile(
+              filePath,
+              filename: fileName,
+              contentType: mediaType,
+            ),
           });
 
           final uploadResponse = await _apiClient.post(
@@ -2540,13 +2592,16 @@ class ChatService {
       // Step 2: Send as message with image content
 
       // Create attachment data in JSON format as required by Pin point
+      final String attachmentOriginalName = (bodyType == 2)
+          ? 'voice note.mp3'
+          : fileName;
       final attachmentMap = <String, dynamic>{
         'Filename': serverFileName,
         'FileName': serverFileName,
-        'OriginalName': fileName,
-        'originalName': fileName,
-        'Name': fileName,
-        'Title': fileName,
+        'OriginalName': attachmentOriginalName,
+        'originalName': attachmentOriginalName,
+        'Name': attachmentOriginalName,
+        'Title': attachmentOriginalName,
         'IsImage': forceDocument ? false : (bodyType == 3),
         'IsDocument': forceDocument ? true : (bodyType == 5),
         'IsVideo': forceDocument ? false : (bodyType == 4),
@@ -2583,14 +2638,26 @@ class ChatService {
         finalFilename = 'temporary/$finalFilename';
       }
 
+      final bool isAudio = forceDocument ? false : (bodyType == 2);
+      final String mime = _getMimeType(fileName);
+      // For voice notes, always use 'voice note.mp3' as OriginalName and 'audio/mpeg' as MIME
+      // so WhatsApp recipients see it as an MP3 file, not a generic BIN document.
+      final String originalNameForSignalR = (bodyType == 2)
+          ? 'voice note.mp3'
+          : fileName;
+      final String mimeForSignalR = (bodyType == 2) ? 'audio/mpeg' : mime;
       final fileJsonObj = <String, dynamic>{
-        "OriginalName": fileName,
+        "OriginalName": originalNameForSignalR,
         "Filename": finalFilename,
+        "MimeType": mimeForSignalR,
+        "mimetype": mimeForSignalR,
         "IsImage": forceDocument ? false : (bodyType == 3),
         "IsDocument": forceDocument ? true : (bodyType == 5),
         "IsVideo": forceDocument ? false : (bodyType == 4),
-        "IsAudio": forceDocument ? false : (bodyType == 2),
+        "IsAudio": isAudio,
         "Ptt": bodyType == 2,
+        "ptt": bodyType == 2,
+        "isVoice": bodyType == 2,
       };
 
       final bool isGroupMedia =

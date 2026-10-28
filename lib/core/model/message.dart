@@ -480,15 +480,31 @@ class Message {
     // Helper untuk mengecek flag Ptt:true (Voice Note marker dari WhatsApp/Telegram)
     bool _isPttFile(dynamic fileData) {
       if (fileData == null) return false;
+      bool isTruthy(dynamic v) {
+        if (v == null) return false;
+        if (v is bool) return v;
+        final s = v.toString().toLowerCase();
+        return s == 'true' || s == '1';
+      }
+
+      bool isPttMap(Map map) {
+        return isTruthy(map['Ptt']) ||
+            isTruthy(map['ptt']) ||
+            isTruthy(map['IsPtt']) ||
+            isTruthy(map['isPtt']) ||
+            isTruthy(map['IsAudio']) ||
+            isTruthy(map['isAudio']) ||
+            isTruthy(map['IsVoice']) ||
+            isTruthy(map['isVoice']);
+      }
+
       try {
         final decoded = fileData is String ? jsonDecode(fileData) : fileData;
         if (decoded is Map) {
-          final isPttMap = decoded['Ptt'] == true || decoded['ptt'] == true || decoded['IsPtt'] == true || decoded['isPtt'] == true || decoded['IsAudio'] == true || decoded['isAudio'] == true || decoded['Ptt']?.toString().toLowerCase() == 'true' || decoded['ptt']?.toString().toLowerCase() == 'true';
-          if (isPttMap) return true;
+          if (isPttMap(decoded)) return true;
         }
         if (decoded is List && decoded.isNotEmpty && decoded.first is Map) {
-          final first = decoded.first;
-          return first['Ptt'] == true || first['ptt'] == true || first['IsPtt'] == true || first['isPtt'] == true || first['IsAudio'] == true || first['isAudio'] == true || first['Ptt']?.toString().toLowerCase() == 'true' || first['ptt']?.toString().toLowerCase() == 'true';
+          if (isPttMap(decoded.first as Map)) return true;
         }
       } catch (_) {}
       return false;

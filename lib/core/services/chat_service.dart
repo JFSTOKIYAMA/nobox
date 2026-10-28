@@ -3324,6 +3324,15 @@ class ChatService {
           roomFields['IsBlock'] = entry.value;
           contactFields['IsBlock'] = entry.value;
         }
+
+        // Kasus khusus untuk Nama Kontak: harus di-update di tabel Kontak utama juga
+        // agar percakapan baru & percakapan lain dengan kontak yang sama ikut ter-update.
+        if (entry.key == 'CtRealNm') {
+          final nameVal = entry.value;
+          contactFields['CtRealNm'] = nameVal;
+          contactFields['Nm'] = nameVal;
+          contactFields['Name'] = nameVal;
+        }
       }
 
       bool roomSuccess = true;

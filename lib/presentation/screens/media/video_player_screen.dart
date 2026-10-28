@@ -12,11 +12,7 @@ class VideoPlayerScreen extends StatefulWidget {
   final String videoUrl;
   final String? caption;
 
-  const VideoPlayerScreen({
-    super.key,
-    required this.videoUrl,
-    this.caption,
-  });
+  const VideoPlayerScreen({super.key, required this.videoUrl, this.caption});
 
   @override
   State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
@@ -203,175 +199,207 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-      // No AppBar — full-screen clean look
-      body: GestureDetector(
-        onTap: _onScreenTap,
-        behavior: HitTestBehavior.opaque,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // ── VIDEO ──
-            Center(
-              child: _hasError
-                  ? _buildErrorWidget()
-                  : _isInitialized
-                      ? AspectRatio(
-                          aspectRatio: _controller.value.aspectRatio,
-                          child: VideoPlayer(_controller),
-                        )
-                      : _buildLoadingWidget(),
-            ),
+        // No AppBar — full-screen clean look
+        body: GestureDetector(
+          onTap: _onScreenTap,
+          behavior: HitTestBehavior.opaque,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // ── VIDEO ──
+              Center(
+                child: _hasError
+                    ? _buildErrorWidget()
+                    : _isInitialized
+                    ? _buildVideoPlayer()
+                    : _buildLoadingWidget(),
+              ),
 
-            // ── CONTROLS OVERLAY ──
-            if (_showControls && _isInitialized)
-              FadeTransition(
-                opacity: _fadeAnimation,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // Semi-transparent scrim
-                    Container(
+              // ── CONTROLS OVERLAY ──
+              if (_showControls && _isInitialized)
+                FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Semi-transparent scrim
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withOpacity(0.5),
+                              Colors.transparent,
+                              Colors.transparent,
+                              Colors.black.withOpacity(0.7),
+                            ],
+                            stops: const [0.0, 0.2, 0.75, 1.0],
+                          ),
+                        ),
+                      ),
+
+                      // ── TOP: Back button + share ──
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: SafeArea(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 4,
+                            ),
+                            child: Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.arrow_back,
+                                    color: Colors.white,
+                                    size: 26,
+                                  ),
+                                  onPressed: () {
+                                    FocusManager.instance.primaryFocus
+                                        ?.unfocus();
+                                    Navigator.pop(context);
+                                  },
+                                ),
+                                const Expanded(
+                                  child: Text(
+                                    'Video',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.share,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                  onPressed: () {
+                                    // Share action placeholder
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // ── CENTER: Play/Pause button ──
+                      Center(
+                        child: GestureDetector(
+                          onTap: _togglePlayPause,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: 70,
+                            height: 70,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.55),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              _controller.value.isPlaying
+                                  ? Icons.pause
+                                  : Icons.play_arrow,
+                              color: Colors.white,
+                              size: 40,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // ── BOTTOM: Progress bar + timestamps ──
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: SafeArea(
+                          top: false,
+                          child: _buildBottomControls(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // ── CAPTION (always visible at bottom when controls hidden) ──
+              if (widget.caption != null &&
+                  widget.caption!.isNotEmpty &&
+                  !_showControls)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    top: false,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            Colors.black.withOpacity(0.5),
-                            Colors.transparent,
                             Colors.transparent,
                             Colors.black.withOpacity(0.7),
                           ],
-                          stops: const [0.0, 0.2, 0.75, 1.0],
                         ),
                       ),
-                    ),
-
-                    // ── TOP: Back button + share ──
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: SafeArea(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 4),
-                          child: Row(
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.arrow_back,
-                                    color: Colors.white, size: 26),
-                                onPressed: () {
-                                  FocusManager.instance.primaryFocus?.unfocus();
-                                  Navigator.pop(context);
-                                },
-                              ),
-                              const Expanded(
-                                child: Text(
-                                  'Video',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.share,
-                                    color: Colors.white, size: 24),
-                                onPressed: () {
-                                  // Share action placeholder
-                                },
-                              ),
-                            ],
-                          ),
+                      child: Text(
+                        widget.caption!,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          height: 1.3,
                         ),
+                        textAlign: TextAlign.center,
                       ),
-                    ),
-
-                    // ── CENTER: Play/Pause button ──
-                    Center(
-                      child: GestureDetector(
-                        onTap: _togglePlayPause,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: 70,
-                          height: 70,
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.55),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            _controller.value.isPlaying
-                                ? Icons.pause
-                                : Icons.play_arrow,
-                            color: Colors.white,
-                            size: 40,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // ── BOTTOM: Progress bar + timestamps ──
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: SafeArea(
-                        top: false,
-                        child: _buildBottomControls(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            // ── CAPTION (always visible at bottom when controls hidden) ──
-            if (widget.caption != null &&
-                widget.caption!.isNotEmpty &&
-                !_showControls)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(
-                  top: false,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withOpacity(0.7),
-                        ],
-                      ),
-                    ),
-                    child: Text(
-                      widget.caption!,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        height: 1.3,
-                      ),
-                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
+
+  /// Build the video player widget with proper rotation handling.
+  /// Wraps VideoPlayer in FittedBox to handle camera rotation metadata
+  /// (90°/270°) without distorting the video.
+  Widget _buildVideoPlayer() {
+    final value = _controller.value;
+    final rotation = value.rotationCorrection;
+    final isRotated = rotation == 90 || rotation == 270;
+    final displayWidth = isRotated ? value.size.height : value.size.width;
+    final displayHeight = isRotated ? value.size.width : value.size.height;
+    final aspectRatio = displayHeight > 0 ? displayWidth / displayHeight : 1.0;
+
+    return AspectRatio(
+      aspectRatio: aspectRatio,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: value.size.width,
+          height: value.size.height,
+          child: VideoPlayer(_controller),
+        ),
+      ),
+    );
+  }
 
   Widget _buildBottomControls() {
     final progress = _totalDuration.inMilliseconds > 0
         ? (_currentPosition.inMilliseconds / _totalDuration.inMilliseconds)
-            .clamp(0.0, 1.0)
+              .clamp(0.0, 1.0)
         : 0.0;
 
     return Column(
@@ -413,7 +441,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                 onTap: () {
                   setState(() {
                     _controller.setVolume(
-                        _controller.value.volume > 0 ? 0.0 : 1.0);
+                      _controller.value.volume > 0 ? 0.0 : 1.0,
+                    );
                   });
                 },
                 child: Icon(
@@ -460,8 +489,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               onChangeStart: (_) => _onSeekStart(),
               onChanged: (value) {
                 final position = Duration(
-                  milliseconds:
-                      (value * _totalDuration.inMilliseconds).round(),
+                  milliseconds: (value * _totalDuration.inMilliseconds).round(),
                 );
                 setState(() => _currentPosition = position);
               },
@@ -488,10 +516,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         const SizedBox(height: 16),
         Text(
           'Loading video...',
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.7),
-            fontSize: 14,
-          ),
+          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
         ),
       ],
     );
@@ -517,12 +542,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
             _initializePlayer();
           },
           icon: const Icon(Icons.refresh, color: Colors.white),
-          label: const Text('Coba lagi',
-              style: TextStyle(color: Colors.white)),
+          label: const Text('Coba lagi', style: TextStyle(color: Colors.white)),
           style: TextButton.styleFrom(
             backgroundColor: Colors.white.withOpacity(0.15),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(24),
             ),

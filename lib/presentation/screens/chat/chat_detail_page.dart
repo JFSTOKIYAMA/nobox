@@ -1303,7 +1303,10 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     }
                   }
 
-                  if (localMsg.id.isNotEmpty && localMsg.id != '0') {
+                  // HANYA pesan yang memiliki ID server permanen (BUKAN ID sementara temp_) yang boleh di-skip
+                  if (localMsg.id.isNotEmpty &&
+                      localMsg.id != '0' &&
+                      !localMsg.id.startsWith('temp_')) {
                     if (!mergedList.any((s) => s.id == localMsg.id)) {
                       mergedList.add(localMsg);
                     }
@@ -1312,6 +1315,39 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
                   // Cari 1 pesan server yang COCOK dan BELUM DI-MATCH
                   int matchIdx = serverMessagesToMatch.indexWhere((s) {
+                    // 1. Pencocokan khusus video / stiker video (DULUAN, sebelum teks):
+                    final isLocalVideoOrSticker =
+                        localMsg.messageType == MessageType.video ||
+                        localMsg.messageType == MessageType.sticker ||
+                        localMsg.content.contains('Video') ||
+                        localMsg.content.contains('Sticker');
+                    final isServerVideoOrSticker =
+                        s.messageType == MessageType.video ||
+                        s.messageType == MessageType.sticker ||
+                        s.content.contains('Video') ||
+                        s.content.contains('Sticker');
+
+                    if (isLocalVideoOrSticker && isServerVideoOrSticker) {
+                      final localUrl =
+                          localMsg.videoUrl ?? localMsg.imageUrl ?? '';
+                      final localFileName = localUrl.split('/').last;
+                      final serverUrl = s.videoUrl ?? s.imageUrl ?? '';
+
+                      // Cocokkan berdasarkan URL / nama file lokal yang terkandung di URL server
+                      if (localUrl.isNotEmpty &&
+                          serverUrl.isNotEmpty &&
+                          (localUrl == serverUrl ||
+                              serverUrl.contains(localFileName))) {
+                        return true;
+                      }
+
+                      // Toleransi waktu dan pengirim sama (jika URL server belum lengkap)
+                      if (s.isMe == localMsg.isMe && s.time == localMsg.time) {
+                        return true;
+                      }
+                    }
+
+                    // 2. Pencocokan standar berdasarkan teks & waktu
                     if (s.isMe == localMsg.isMe &&
                         s.content.trim().toLowerCase() ==
                             localMsg.content.trim().toLowerCase()) {
@@ -1433,6 +1469,24 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 int matchIdx = _messages.indexWhere((m) {
                   int idx = _messages.indexOf(m);
                   if (serverMatchedIndices.contains(idx)) return false;
+
+                  // Pencocokan khusus media Video di LocalSentCache:
+                  if (cached.message.messageType == MessageType.video &&
+                      m.messageType == MessageType.video) {
+                    final cUrl = cached.message.videoUrl ?? '';
+                    final cName = cUrl.split('/').last;
+                    final mUrl = m.videoUrl ?? '';
+                    if (cUrl.isNotEmpty &&
+                        mUrl.isNotEmpty &&
+                        (cUrl == mUrl || mUrl.contains(cName))) {
+                      return true;
+                    }
+                    if (m.isMe &&
+                        (m.time == cTime || m.id == cached.message.id)) {
+                      return true;
+                    }
+                  }
+
                   if (!m.isMe || m.content.trim().toLowerCase() != cContent)
                     return false;
                   if (m.time == cTime ||
@@ -4141,49 +4195,37 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
     final pLower = pickedFile.path.toLowerCase();
     final nLower = pickedFile.name.toLowerCase();
+
+    // Stiker HANYA jika berekstensi .tgs, .webp, atau nama filenya mengandung kata 'sticker' / 'stiker'
+    final isTgsSticker = pLower.endsWith('.tgs') || nLower.endsWith('.tgs');
     final isStickerFile =
+        isTgsSticker ||
         pLower.endsWith('.webp') ||
-        pLower.endsWith('.webm') ||
-        pLower.endsWith('.tgs') ||
-        pLower.endsWith('.gif') ||
         nLower.endsWith('.webp') ||
-        nLower.endsWith('.webm') ||
-        nLower.endsWith('.tgs') ||
-        nLower.endsWith('.gif') ||
         nLower.contains('sticker') ||
         nLower.contains('stiker');
 
+    // Animated video sticker HANYA jika file terbukti stiker DAN berformat animasi (.webm)
     final isAnimatedVideoSticker =
-        pLower.endsWith('.webm') ||
-        pLower.endsWith('.mp4') ||
-        pLower.endsWith('.mov') ||
-        nLower.endsWith('.webm') ||
-        nLower.endsWith('.mp4') ||
-        nLower.endsWith('.mov');
+        isStickerFile && (pLower.endsWith('.webm') || nLower.endsWith('.webm'));
 
-    final isTgsSticker = pLower.endsWith('.tgs') || nLower.endsWith('.tgs');
-
-    // Static stickers: .webp, .png, .gif (non-animated)
     final isStaticSticker =
         isStickerFile && !isAnimatedVideoSticker && !isTgsSticker;
 
-    final displayContent = isAnimatedVideoSticker
-        ? '🎬 Sticker'
-        : (isTgsSticker
-              ? '🎬 Sticker'
-              : (isStickerFile ? '🌟 Sticker' : '🎬 Video'));
+    // JIKA BUKAN STIKER, WAJIB '🎬 Video' (tidak boleh ada .mp4 atau .mov yang jadi '🎬 Sticker')
+    final displayContent = isStickerFile
+        ? (isAnimatedVideoSticker || isTgsSticker ? '🎬 Sticker' : '🌟 Sticker')
+        : '🎬 Video';
 
+    final tempId = 'temp_video_${DateTime.now().millisecondsSinceEpoch}';
     final newMessage = Message(
+      id: tempId,
       content: displayContent,
       isMe: true,
       time: timeString,
-      rawTime: now
-          .toUtc()
-          .toIso8601String(), // Wajib ada ISO string agar urutan bubble stabil
+      rawTime: now.toUtc().toIso8601String(),
       status: MessageStatus.sent,
       messageType: isStickerFile ? MessageType.sticker : MessageType.video,
-      // Selalu pasang path lokal agar video dapat langsung di-preview.
-      // imageUrl hanya untuk static sticker (.webp, .png, .gif) dan TGS.
       videoUrl: pickedFile.path,
       imageUrl: (isStaticSticker || isTgsSticker) ? pickedFile.path : null,
       ack: 1,
@@ -4232,14 +4274,22 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
     if (mounted && messageIndex < _messages.length) {
       if (!response.isError) {
+        final updatedMsg = _messages[messageIndex].copyWith(
+          status: MessageStatus.delivered,
+          videoUrl:
+              response.data ?? pickedFile.path, // FIX: Simpan URL dari server
+          ack: 2,
+        );
         setState(() {
-          _messages[messageIndex] = _messages[messageIndex].copyWith(
-            status: MessageStatus.delivered,
-            videoUrl:
-                response.data ?? pickedFile.path, // FIX: Simpan URL dari server
-            ack: 2,
-          );
+          _messages[messageIndex] = updatedMsg;
         });
+
+        // Simpan ke cache lokal dan disk agar status delivered tersimpan permanen
+        _localSentCache.putIfAbsent(chat.id, () => []);
+        _localSentCache[chat.id]!.add(
+          _CachedSentMessage(updatedMsg, DateTime.now()),
+        );
+        _savePersistentMessages();
       } else {
         // GAGAL KIRIM: Update status pesan jadi ack 4
         setState(() {
@@ -4506,6 +4556,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         status: MessageStatus.sent,
         messageType: MessageType.document,
         documentName: file.name,
+        documentUrl: file.path,
         ack: 1,
       );
 

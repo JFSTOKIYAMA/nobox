@@ -96,8 +96,20 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
         Provider.of<ChatProvider>(
           context,
           listen: false,
-        ).getSavedContactName(widget.chat.id) ??
+        ).getSavedContactName(widget.chat) ??
         widget.chat.sender;
+
+    // TAMBAHKAN: Langsung load negara, provinsi, dan kota dari cache lokal
+    // agar langsung muncul instan tanpa menunggu server.
+    final localLocation = Provider.of<ChatProvider>(
+      context,
+      listen: false,
+    ).getSavedContactLocation(widget.chat.id);
+    if (localLocation != null) {
+      _contactCountry = localLocation['Country'] ?? '';
+      _contactState = localLocation['State'] ?? '';
+      _contactCity = localLocation['City'] ?? '';
+    }
 
     // Fetch latest data from server
     _loadDetailRoom();
@@ -184,7 +196,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
 
       setState(() {
         // Update nama kontak reaktif dari saved name lokal / server (CtRealNm)
-        final savedLocalName = chatProvider.getSavedContactName(widget.chat.id);
+        final savedLocalName = chatProvider.getSavedContactName(widget.chat);
         final serverName =
             room['CtRealNm']?.toString() ?? room['CtTmp']?.toString();
         if (savedLocalName != null && savedLocalName.isNotEmpty) {
@@ -485,66 +497,91 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
             }
           }
           // Extract Contact location data (Country, State, City)
-          final contact =
-              roomData['ContactReal'] ??
-              roomData['Contact'] ??
-              roomData['Room'] ??
-              roomData;
-          debugPrint(
-            'ContactInfo: Trying contact source, type=${contact.runtimeType}',
-          );
-          if (contact is Map) {
-            final country =
-                contact['Country']?.toString() ??
-                contact['Cntry']?.toString() ??
-                '';
-            final state =
-                contact['State']?.toString() ??
-                contact['Stt']?.toString() ??
-                contact['Province']?.toString() ??
-                '';
-            final city =
-                contact['City']?.toString() ?? contact['Cty']?.toString() ?? '';
-            debugPrint(
-              'ContactInfo: Parsed => Country="$country", State="$state", City="$city"',
-            );
-            if (country.isNotEmpty) _contactCountry = country;
-            if (state.isNotEmpty) _contactState = state;
-            if (city.isNotEmpty) _contactCity = city;
+          // MULTI-SOURCE: coba ContactReal dulu, lalu Room, agar field
+          // tidak kosong hanya karena satu source null.
+          String country = '';
+          String state = '';
+          String city = '';
 
-            final photo =
-                contact['Photo']?.toString() ??
-                room['CtImg']?.toString() ??
-                room['LinkImg']?.toString() ??
+          final contactNode = roomData is Map
+              ? (roomData['ContactReal'] ?? roomData['Contact'])
+              : null;
+          final roomNode = roomData is Map ? roomData['Room'] : null;
+
+          if (contactNode is Map) {
+            country =
+                contactNode['Country']?.toString() ??
+                contactNode['Cntry']?.toString() ??
                 '';
+            state =
+                contactNode['State']?.toString() ??
+                contactNode['Stt']?.toString() ??
+                contactNode['Province']?.toString() ??
+                '';
+            city =
+                contactNode['City']?.toString() ??
+                contactNode['Cty']?.toString() ??
+                '';
+          }
+
+          if (roomNode is Map) {
+            if (country.isEmpty)
+              country =
+                  roomNode['Country']?.toString() ??
+                  roomNode['Cntry']?.toString() ??
+                  '';
+            if (state.isEmpty)
+              state =
+                  roomNode['State']?.toString() ??
+                  roomNode['Stt']?.toString() ??
+                  '';
+            if (city.isEmpty)
+              city =
+                  roomNode['City']?.toString() ??
+                  roomNode['Cty']?.toString() ??
+                  '';
+          }
+
+          debugPrint(
+            'ContactInfo: Parsed => Country="$country", State="$state", City="$city"',
+          );
+          if (country.isNotEmpty) _contactCountry = country;
+          if (state.isNotEmpty) _contactState = state;
+          if (city.isNotEmpty) _contactCity = city;
+
+          // Photo extraction (multi-source)
+          {
+            final photoContact = contactNode is Map
+                ? contactNode['Photo']?.toString()
+                : null;
+            final photoRoom = roomNode is Map
+                ? (roomNode['CtImg']?.toString() ??
+                      roomNode['LinkImg']?.toString())
+                : null;
+            final photo = photoContact ?? photoRoom ?? '';
             if (photo.isNotEmpty) {
               String resolvedPhoto = photo;
               if (!photo.startsWith('http')) {
-                // Ganti backslash (Windows path) menjadi forward slash agar URL valid
                 resolvedPhoto =
                     'https://id.nobox.ai/upload/${photo.replaceAll('\\', '/')}';
               }
               _currentAvatarUrl = resolvedPhoto;
-              // SIMPAN ke cache ChatProvider agar bisa dipakai di halaman daftar chat
               chatProvider.saveCachedAvatarUrl(widget.chat.id, resolvedPhoto);
             }
           }
 
-          // Override: gunakan data lokasi lokal (optimistic save) jika ada
+          // Override: SELALU utamakan cache lokal jika ada nilai tersimpan
           final localLocation = chatProvider.getSavedContactLocation(
             widget.chat.id,
           );
           if (localLocation != null) {
-            if (localLocation['Country'] != null &&
-                localLocation['Country']!.isNotEmpty) {
+            if (localLocation['Country']?.isNotEmpty == true) {
               _contactCountry = localLocation['Country']!;
             }
-            if (localLocation['State'] != null &&
-                localLocation['State']!.isNotEmpty) {
+            if (localLocation['State']?.isNotEmpty == true) {
               _contactState = localLocation['State']!;
             }
-            if (localLocation['City'] != null &&
-                localLocation['City']!.isNotEmpty) {
+            if (localLocation['City']?.isNotEmpty == true) {
               _contactCity = localLocation['City']!;
             }
           }
@@ -2355,7 +2392,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final chat = widget.chat;
     final chatProvider = context.watch<ChatProvider>();
-    final savedContactName = chatProvider.getSavedContactName(widget.chat.id);
+    final savedContactName = chatProvider.getSavedContactName(widget.chat);
     final contactName =
         (savedContactName != null && savedContactName.isNotEmpty)
         ? savedContactName
@@ -2487,21 +2524,37 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                             ),
                           );
                           if (result == true) {
-                            // Refresh nama secara reaktif + data terbaru dari server
+                            // Refresh nama & lokasi secara reaktif + data terbaru dari server
                             if (mounted) {
                               final provider = Provider.of<ChatProvider>(
                                 context,
                                 listen: false,
                               );
+
+                              // 1. Update nama kontak
                               final updatedName = provider.getSavedContactName(
-                                widget.chat.id,
+                                widget.chat,
                               );
                               if (updatedName != null &&
                                   updatedName.isNotEmpty) {
-                                setState(
-                                  () => _currentContactName = updatedName,
-                                );
+                                _currentContactName = updatedName;
                               }
+
+                              // 2. UPDATE NEGARA, PROVINSI, KOTA SEKETIKA DARI CACHE LOKAL:
+                              final updatedLoc = provider
+                                  .getSavedContactLocation(widget.chat.id);
+                              if (updatedLoc != null) {
+                                _contactCountry =
+                                    updatedLoc['Country'] ?? _contactCountry;
+                                _contactState =
+                                    updatedLoc['State'] ?? _contactState;
+                                _contactCity =
+                                    updatedLoc['City'] ?? _contactCity;
+                              }
+
+                              setState(() {}); // Trigger render ulang seketika!
+
+                              // Tarik data background tanpa menghapus data lokal
                               _loadDetailRoom();
                             }
                           }

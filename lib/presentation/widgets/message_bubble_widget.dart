@@ -15,8 +15,11 @@ import 'package:latlong2/latlong.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:video_player/video_player.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:dio/dio.dart';
+import 'package:open_filex/open_filex.dart';
 import 'dart:io';
 
+import '../../../core/app_config.dart';
 import '../../../core/model/message.dart';
 import '../../../core/providers/theme_provider.dart';
 import '../screens/media/image_viewer_screen.dart';
@@ -856,16 +859,10 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
   }
 
   Widget _buildDocumentMessage(bool isMe, bool isDarkMode) {
-    // Extract file name and extension from documentName or content
+    final cleanMessage = _cleanContent(widget.message.content);
     final fileName =
         widget.message.documentName ??
         widget.message.content.replaceAll('📄 ', '').trim();
-    final ext = fileName.contains('.')
-        ? '.${fileName.split('.').last.toLowerCase()}'
-        : '';
-
-    final cleanMessage = _cleanContent(widget.message.content);
-    // Jika content bukan nama file (alias pesan email/teks), kita tampilkan sebagai caption
     final hasCaption =
         cleanMessage.isNotEmpty &&
         !cleanMessage.contains(fileName) &&
@@ -876,80 +873,10 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
           ? CrossAxisAlignment.end
           : CrossAxisAlignment.start,
       children: [
-        Container(
-          constraints: BoxConstraints(
-            minWidth: MediaQuery.of(context).size.width * 0.65,
-            maxWidth: MediaQuery.of(context).size.width * 0.75,
-          ),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: isMe
-                ? Colors.white.withOpacity(0.15)
-                : (isDarkMode
-                      ? Colors.white.withOpacity(0.08)
-                      : Colors.black.withOpacity(0.05)),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // File icon container
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: isMe
-                      ? Colors.white.withOpacity(0.2)
-                      : (isDarkMode
-                            ? AppTheme.primaryColor.withOpacity(0.2)
-                            : AppTheme.primaryColor.withOpacity(0.12)),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.insert_drive_file,
-                  color: isMe ? Colors.white : AppTheme.primaryColor,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 10),
-              // File name + extension
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      fileName,
-                      style: TextStyle(
-                        color: isMe
-                            ? Colors.white
-                            : (isDarkMode
-                                  ? AppTheme.darkTextPrimary
-                                  : AppTheme.textPrimary),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        height: 1.2,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Document${ext.isNotEmpty ? ' • ${ext.toUpperCase().replaceAll('.', '')}' : ''}',
-                      style: TextStyle(
-                        color: isMe
-                            ? Colors.white70
-                            : (isDarkMode
-                                  ? AppTheme.darkTextSecondary
-                                  : AppTheme.textSecondary),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+        _DocumentMessageWidget(
+          message: widget.message,
+          isMe: isMe,
+          isDarkMode: isDarkMode,
         ),
         if (hasCaption) ...[
           const SizedBox(height: 6),
@@ -1283,7 +1210,8 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
         .trim();
     final hasCaption = caption.isNotEmpty;
     final maxWidth = MediaQuery.of(context).size.width * 0.7;
-    final fixedHeight = maxWidth * 9 / 16; // Enforce 16:9 ratio
+    // Use flexible max-height instead of forcing 16:9 — preserves portrait/landscape ratio
+    final maxHeight = 320.0;
 
     return Column(
       crossAxisAlignment: isMe
@@ -1307,22 +1235,27 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
           },
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              width: maxWidth,
-              height: fixedHeight,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: maxWidth,
+                maxHeight: maxHeight,
+              ),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // Dark placeholder background (no expensive thumbnail generation)
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.grey.shade800, Colors.grey.shade900],
+                  // Tampilkan thumbnail frame pertama video jika videoUrl tersedia
+                  if (videoUrl.isNotEmpty)
+                    _VideoThumbnailWidget(videoUrl: videoUrl)
+                  else
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.grey.shade800, Colors.grey.shade900],
+                        ),
                       ),
                     ),
-                  ),
                   // Gradient overlay
                   Container(
                     decoration: BoxDecoration(
@@ -1732,6 +1665,361 @@ class _MessageBubbleWidgetState extends State<MessageBubbleWidget>
     }
 
     return Icon(icon, size: 14, color: color);
+  }
+}
+
+class _DocumentMessageWidget extends StatefulWidget {
+  final Message message;
+  final bool isMe;
+  final bool isDarkMode;
+
+  const _DocumentMessageWidget({
+    required this.message,
+    required this.isMe,
+    required this.isDarkMode,
+  });
+
+  @override
+  State<_DocumentMessageWidget> createState() => _DocumentMessageWidgetState();
+}
+
+class _DocumentMessageWidgetState extends State<_DocumentMessageWidget> {
+  bool _isDownloading = false;
+  double _progress = 0.0;
+  bool _isDownloaded = false;
+  String? _savedLocalPath;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkLocalFile();
+  }
+
+  Future<void> _checkLocalFile() async {
+    try {
+      final rawUrl = widget.message.documentUrl?.trim() ?? '';
+      final fileName = _getFileName();
+
+      if (rawUrl.isNotEmpty &&
+          !rawUrl.startsWith('http') &&
+          File(rawUrl).existsSync()) {
+        if (mounted) {
+          setState(() {
+            _isDownloaded = true;
+            _savedLocalPath = rawUrl;
+          });
+        }
+        return;
+      }
+
+      final appDir = await getApplicationDocumentsDirectory();
+      final noboxDocsDir = Directory('${appDir.path}/NoBox_Documents');
+      if (!noboxDocsDir.existsSync()) {
+        noboxDocsDir.createSync(recursive: true);
+      }
+
+      final targetFile = File('${noboxDocsDir.path}/$fileName');
+      if (targetFile.existsSync() && targetFile.lengthSync() > 0) {
+        if (mounted) {
+          setState(() {
+            _isDownloaded = true;
+            _savedLocalPath = targetFile.path;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking local document: $e');
+    }
+  }
+
+  String _getFileName() {
+    if (widget.message.documentName != null &&
+        widget.message.documentName!.isNotEmpty) {
+      return widget.message.documentName!;
+    }
+    final clean = widget.message.content.replaceAll('📄 ', '').trim();
+    if (clean.isNotEmpty && clean.contains('.')) return clean;
+    final url = widget.message.documentUrl ?? '';
+    if (url.isNotEmpty && url.contains('/')) return url.split('/').last;
+    return 'document.pdf';
+  }
+
+  String _getFullRemoteUrl() {
+    final url = widget.message.documentUrl?.trim() ?? '';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    final base = AppConfig.uploadUrl.endsWith('/')
+        ? AppConfig.uploadUrl
+        : '${AppConfig.uploadUrl}/';
+    final cleanPath = url.startsWith('/') ? url.substring(1) : url;
+    return '$base$cleanPath';
+  }
+
+  Future<void> _downloadFile() async {
+    final remoteUrl = _getFullRemoteUrl();
+    if (remoteUrl.isEmpty ||
+        (!remoteUrl.startsWith('http://') &&
+            !remoteUrl.startsWith('https://'))) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tautan dokumen tidak valid'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _isDownloading = true;
+      _progress = 0.0;
+    });
+
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final noboxDocsDir = Directory('${appDir.path}/NoBox_Documents');
+      if (!noboxDocsDir.existsSync()) {
+        noboxDocsDir.createSync(recursive: true);
+      }
+
+      final fileName = _getFileName();
+      final savePath = '${noboxDocsDir.path}/$fileName';
+
+      final dio = Dio();
+      await dio.download(
+        remoteUrl,
+        savePath,
+        onReceiveProgress: (received, total) {
+          if (total > 0 && mounted) {
+            setState(() {
+              _progress = (received / total).clamp(0.0, 1.0);
+            });
+          }
+        },
+      );
+
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+          _isDownloaded = true;
+          _savedLocalPath = savePath;
+        });
+
+        // Langsung buka file secara otomatis tanpa menampilkan SnackBar sukses
+        _openFile();
+      }
+    } catch (e) {
+      debugPrint('Error downloading document: $e');
+      if (mounted) {
+        setState(() => _isDownloading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal mengunduh dokumen: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _openFile() async {
+    final remoteUrl = _getFullRemoteUrl();
+
+    // 1. Coba buka dari file lokal dengan OpenFilex jika file ada
+    if (_savedLocalPath != null && File(_savedLocalPath!).existsSync()) {
+      try {
+        final result = await OpenFilex.open(_savedLocalPath!);
+        if (result.type == ResultType.done) {
+          return; // Berhasil dibuka secara lokal
+        }
+        debugPrint('OpenFilex returned non-done: ${result.message}');
+      } catch (e) {
+        debugPrint('OpenFilex failed (MissingPlugin / native error): $e');
+        // JANGAN munculkan SnackBar error merah, biarkan lanjut ke fallback di bawah!
+      }
+    }
+
+    // 2. Fallback Otomatis: Buka tautan dokumen ke WPS Office / Viewer eksternal HP
+    if (remoteUrl.isNotEmpty) {
+      try {
+        final uri = Uri.parse(remoteUrl);
+        final launched = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (launched) return;
+      } catch (e) {
+        debugPrint('launchUrl external fallback error: $e');
+      }
+    }
+
+    // 3. Hanya tampilkan notifikasi jika kedua metode di atas benar-benar gagal
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Tidak dapat membuka dokumen. Pastikan koneksi aktif atau WPS Office terpasang.',
+          ),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fileName = _getFileName();
+    final ext = fileName.contains('.')
+        ? '.${fileName.split('.').last.toLowerCase()}'
+        : '';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          if (_isDownloading) return;
+          if (_isDownloaded) {
+            _openFile();
+          } else {
+            _downloadFile();
+          }
+        },
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          constraints: BoxConstraints(
+            minWidth: MediaQuery.of(context).size.width * 0.65,
+            maxWidth: MediaQuery.of(context).size.width * 0.75,
+          ),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: widget.isMe
+                ? Colors.white.withOpacity(0.15)
+                : (widget.isDarkMode
+                      ? Colors.white.withOpacity(0.08)
+                      : Colors.black.withOpacity(0.05)),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: widget.isMe
+                  ? Colors.white.withOpacity(0.2)
+                  : (widget.isDarkMode ? Colors.white12 : Colors.black12),
+              width: 0.5,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: widget.isMe
+                      ? Colors.white.withOpacity(0.2)
+                      : (widget.isDarkMode
+                            ? AppTheme.primaryColor.withOpacity(0.2)
+                            : AppTheme.primaryColor.withOpacity(0.12)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.insert_drive_file,
+                  color: widget.isMe ? Colors.white : AppTheme.primaryColor,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      fileName,
+                      style: TextStyle(
+                        color: widget.isMe
+                            ? Colors.white
+                            : (widget.isDarkMode
+                                  ? AppTheme.darkTextPrimary
+                                  : AppTheme.textPrimary),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        height: 1.2,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _isDownloading
+                          ? 'Mengunduh... ${(_progress * 100).toInt()}%'
+                          : (_isDownloaded
+                                ? 'Ketuk untuk membuka • ${ext.toUpperCase().replaceAll('.', '')}'
+                                : 'Ketuk untuk unduh • ${ext.toUpperCase().replaceAll('.', '')}'),
+                      style: TextStyle(
+                        color: widget.isMe
+                            ? Colors.white70
+                            : (widget.isDarkMode
+                                  ? AppTheme.darkTextSecondary
+                                  : AppTheme.textSecondary),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _buildActionIcon(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionIcon() {
+    if (_isDownloading) {
+      return SizedBox(
+        width: 26,
+        height: 26,
+        child: CircularProgressIndicator(
+          value: _progress > 0 ? _progress : null,
+          strokeWidth: 2.5,
+          color: widget.isMe ? Colors.white : AppTheme.primaryColor,
+        ),
+      );
+    }
+
+    if (_isDownloaded) {
+      return Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: widget.isMe
+              ? Colors.white.withOpacity(0.2)
+              : AppTheme.primaryColor.withOpacity(0.12),
+        ),
+        child: Icon(
+          Icons.open_in_new_rounded,
+          size: 18,
+          color: widget.isMe ? Colors.white : AppTheme.primaryColor,
+        ),
+      );
+    }
+
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: widget.isMe
+            ? Colors.white.withOpacity(0.2)
+            : AppTheme.primaryColor.withOpacity(0.12),
+      ),
+      child: Icon(
+        Icons.arrow_downward_rounded,
+        size: 18,
+        color: widget.isMe ? Colors.white : AppTheme.primaryColor,
+      ),
+    );
   }
 }
 

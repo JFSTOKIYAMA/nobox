@@ -48,6 +48,10 @@ class _EditContactPageState extends State<EditContactPage> {
   List<csc.City> _cities = [];
   bool _isLoadingCountries = true;
   bool _isLoadingContact = true;
+  bool _isLoadingCities = false;
+
+  // Static cache: decode JSON asset negara hanya SEKALI seumur hidup aplikasi
+  static List<csc.Country>? _cachedCountries;
 
   // Overlay state for category
   final GlobalKey _categoryKey = GlobalKey();
@@ -70,52 +74,164 @@ class _EditContactPageState extends State<EditContactPage> {
     super.initState();
     _filteredCategories = _categories;
     _currentAvatarUrl = widget.chat.avatarUrl;
-    final savedName = Provider.of<ChatProvider>(
-      context,
-      listen: false,
-    ).getSavedContactName(widget.chat.id);
+
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+    final savedName = chatProvider.getSavedContactName(widget.chat);
     _nameController = TextEditingController(
       text: savedName ?? widget.chat.sender,
     );
     _addressController = TextEditingController();
     _postalCodeController = TextEditingController();
+
+    // PRE-FILL INSTAN DARI CACHE LOKAL (0ms) — form langsung terisi
+    final localLocation = chatProvider.getSavedContactLocation(widget.chat.id);
+    if (localLocation != null) {
+      if (localLocation['Address'] != null &&
+          localLocation['Address']!.isNotEmpty) {
+        _addressController.text = localLocation['Address']!;
+      }
+      if (localLocation['Postal'] != null &&
+          localLocation['Postal']!.isNotEmpty) {
+        _postalCodeController.text = localLocation['Postal']!;
+      }
+      if (localLocation['Country'] != null &&
+          localLocation['Country']!.isNotEmpty) {
+        _selectedCountryName = localLocation['Country'];
+      }
+      if (localLocation['State'] != null &&
+          localLocation['State']!.isNotEmpty) {
+        _selectedStateName = localLocation['State'];
+      }
+      if (localLocation['City'] != null && localLocation['City']!.isNotEmpty) {
+        _selectedCityName = localLocation['City'];
+      }
+      // Data lokal sudah ada → jangan tampilkan loading blocking layar
+      _isLoadingContact = false;
+    }
+
     _initializeData();
   }
 
   Future<void> _initializeData() async {
     await Future.wait([_loadCountries(), _loadContactData()]);
 
-    // FIX: Resolusi otomatis ISO Code berdasarkan nama Negara & Provinsi.
-    // Tanpa ini, pengguna tidak bisa klik dropdown City (karena _selectedStateCode masih null).
     if (_selectedCountryName != null && _countries.isNotEmpty) {
-      try {
-        final country = _countries.firstWhere(
-          (c) => c.name.toLowerCase() == _selectedCountryName!.toLowerCase(),
-        );
+      final country = _findMatchingCountry(_selectedCountryName!);
+      if (country != null) {
         _selectedCountryCode = country.isoCode;
+        await _loadStates(country.isoCode);
 
         if (_selectedStateName != null) {
-          await _loadStates(country.isoCode);
-          try {
-            final state = _states.firstWhere(
-              (s) => s.name.toLowerCase() == _selectedStateName!.toLowerCase(),
-            );
+          final state = _findMatchingState(_selectedStateName!);
+          if (state != null) {
             _selectedStateCode = state.isoCode;
-
-            if (_selectedCityName != null) {
-              await _loadCities(country.isoCode, state.isoCode);
-            }
-          } catch (_) {
-            // Provinsi tidak ditemukan di database country_state_city
           }
-        } else {
-          await _loadStates(country.isoCode);
+          // Pastikan kota selalu dimuat agar pengguna bisa langsung memilih kota
+          if (_selectedStateCode != null) {
+            await _loadCities(country.isoCode, _selectedStateCode!);
+          }
         }
-      } catch (_) {
-        // Negara tidak ditemukan di database country_state_city
       }
       if (mounted) setState(() {});
     }
+  }
+
+  csc.Country? _findMatchingCountry(String countryName) {
+    if (_countries.isEmpty) return null;
+    final lower = countryName.toLowerCase().trim();
+    try {
+      return _countries.firstWhere(
+        (c) =>
+            c.name.toLowerCase().trim() == lower ||
+            c.isoCode.toLowerCase().trim() == lower,
+      );
+    } catch (_) {}
+    try {
+      return _countries.firstWhere(
+        (c) =>
+            c.name.toLowerCase().contains(lower) ||
+            lower.contains(c.name.toLowerCase()),
+      );
+    } catch (_) {}
+    return null;
+  }
+
+  csc.State? _findMatchingState(String stateName) {
+    if (_states.isEmpty) return null;
+    final lower = stateName.toLowerCase().trim();
+
+    // Direct match
+    try {
+      return _states.firstWhere(
+        (s) =>
+            s.name.toLowerCase().trim() == lower ||
+            s.isoCode.toLowerCase().trim() == lower,
+      );
+    } catch (_) {}
+
+    // Indonesia province alias dictionary
+    final Map<String, List<String>> aliases = {
+      'east java': ['jawa timur', 'jatim'],
+      'west java': ['jawa barat', 'jabar'],
+      'central java': ['jawa tengah', 'jateng'],
+      'special capital region of jakarta': [
+        'dki jakarta',
+        'jakarta',
+        'daerah khusus ibukota jakarta',
+      ],
+      'jakarta': ['dki jakarta', 'daerah khusus ibukota jakarta'],
+      'special region of yogyakarta': [
+        'di yogyakarta',
+        'yogyakarta',
+        'daerah istimewa yogyakarta',
+        'jogja',
+      ],
+      'yogyakarta': ['di yogyakarta', 'daerah istimewa yogyakarta', 'jogja'],
+      'north sumatra': ['sumatera utara', 'sumut'],
+      'west sumatra': ['sumatera barat', 'sumbar'],
+      'south sumatra': ['sumatera selatan', 'sumsel'],
+      'riau islands': ['kepulauan riau', 'kepri'],
+      'bangka belitung islands': ['bangka belitung', 'babel'],
+      'west kalimantan': ['kalimantan barat', 'kalbar'],
+      'east kalimantan': ['kalimantan timur', 'kaltim'],
+      'south kalimantan': ['kalimantan selatan', 'kalsel'],
+      'central kalimantan': ['kalimantan tengah', 'kalteng'],
+      'north kalimantan': ['kalimantan utara', 'kaltara'],
+      'south sulawesi': ['sulawesi selatan', 'sulsel'],
+      'north sulawesi': ['sulawesi utara', 'sulut'],
+      'central sulawesi': ['sulawesi tengah', 'sulteng'],
+      'southeast sulawesi': ['sulawesi tenggara', 'sultra'],
+      'west sulawesi': ['sulawesi barat', 'sulbar'],
+      'north maluku': ['maluku utara'],
+      'west papua': ['papua barat'],
+      'bali': ['bali'],
+      'banten': ['banten'],
+      'aceh': ['nanggroe aceh darussalam', 'aceh'],
+    };
+
+    for (final s in _states) {
+      final sNameLower = s.name.toLowerCase().trim();
+      final list = aliases[sNameLower];
+      if (list != null && list.contains(lower)) {
+        return s;
+      }
+      for (final entry in aliases.entries) {
+        if (entry.key == lower && entry.value.contains(sNameLower)) {
+          return s;
+        }
+      }
+    }
+
+    // Substring contains match
+    try {
+      return _states.firstWhere(
+        (s) =>
+            s.name.toLowerCase().contains(lower) ||
+            lower.contains(s.name.toLowerCase()),
+      );
+    } catch (_) {}
+
+    return null;
   }
 
   // FITUR: Memuat Data Kontak (API Call)
@@ -123,16 +239,20 @@ class _EditContactPageState extends State<EditContactPage> {
   Future<void> _loadContactData() async {
     try {
       final chatProvider = Provider.of<ChatProvider>(context, listen: false);
-      final data = await chatProvider.getDetailRoom(widget.chat.id);
+      // forceRefresh: false agar memanfaatkan cache memori yang sudah diambil
+      // oleh ContactInfoPage (0ms, tanpa request HTTP redundan).
+      final data = await chatProvider.getDetailRoom(
+        widget.chat.id,
+        forceRefresh: false,
+      );
       if (data != null && mounted) {
-        // Data ada di data['Data']['Room'] dan data['Data']['ContactReal']
         final room = data['Data']?['Room'] ?? data;
         final contact =
             data['Data']?['ContactReal'] ?? data['Data']?['Contact'] ?? data;
 
         setState(() {
           // Optimistic name check: prioritaskan nama yang sudah disimpan secara lokal.
-          final localName = chatProvider.getSavedContactName(widget.chat.id);
+          final localName = chatProvider.getSavedContactName(widget.chat);
           if (localName != null && localName.isNotEmpty) {
             _nameController.text = localName;
           } else {
@@ -147,77 +267,68 @@ class _EditContactPageState extends State<EditContactPage> {
             }
           }
 
-          // Pre-fill data lokasi dari contact (server)
-          final address = contact['Address']?.toString() ?? '';
+          // Pre-fill data lokasi multi-source (ContactReal → Room)
+          final addressInput = contact is Map
+              ? contact['Address']?.toString()
+              : null;
+          final roomAddress = room is Map ? room['Address']?.toString() : null;
+          final address = addressInput ?? roomAddress ?? '';
           if (address.isNotEmpty) _addressController.text = address;
 
-          final postalCode =
-              contact['Postal']?.toString() ??
-              contact['PostalCode']?.toString() ??
-              '';
-          if (postalCode.isNotEmpty) _postalCodeController.text = postalCode;
-
-          final country =
-              contact['Country']?.toString() ??
-              contact['Cntry']?.toString() ??
-              '';
-          if (country.isNotEmpty) _selectedCountryName = country;
-
-          final state =
-              contact['State']?.toString() ??
-              contact['Stt']?.toString() ??
-              contact['Province']?.toString() ??
-              '';
-          if (state.isNotEmpty) _selectedStateName = state;
-
-          final city =
-              contact['City']?.toString() ?? contact['Cty']?.toString() ?? '';
-          if (city.isNotEmpty) _selectedCityName = city;
-
-          final photo =
-              contact['Photo']?.toString() ??
-              room['CtImg']?.toString() ??
-              room['LinkImg']?.toString() ??
-              '';
-          if (photo.isNotEmpty) {
-            if (photo.startsWith('http')) {
-              _currentAvatarUrl = photo;
-            } else {
-              _currentAvatarUrl = 'https://id.nobox.ai/upload/$photo';
-            }
+          final postalCode = contact is Map
+              ? contact['Postal']?.toString()
+              : null;
+          final postalCode2 = contact is Map
+              ? contact['PostalCode']?.toString()
+              : null;
+          final postalCode3 = room is Map ? room['Postal']?.toString() : null;
+          final postalCodeFinal =
+              postalCode ?? postalCode2 ?? postalCode3 ?? '';
+          if (postalCodeFinal.isNotEmpty) {
+            _postalCodeController.text = postalCodeFinal;
           }
 
-          // Override: gunakan data lokasi lokal (optimistic save) jika ada
-          final localLocation = chatProvider.getSavedContactLocation(
-            widget.chat.id,
-          );
-          if (localLocation != null) {
-            if (localLocation['Address'] != null &&
-                localLocation['Address']!.isNotEmpty) {
-              _addressController.text = localLocation['Address']!;
-            }
-            if (localLocation['Postal'] != null &&
-                localLocation['Postal']!.isNotEmpty) {
-              _postalCodeController.text = localLocation['Postal']!;
-            }
-            if (localLocation['Country'] != null &&
-                localLocation['Country']!.isNotEmpty) {
-              _selectedCountryName = localLocation['Country']!;
-            }
-            if (localLocation['State'] != null &&
-                localLocation['State']!.isNotEmpty) {
-              _selectedStateName = localLocation['State']!;
-            }
-            if (localLocation['City'] != null &&
-                localLocation['City']!.isNotEmpty) {
-              _selectedCityName = localLocation['City']!;
-            }
+          final country = contact is Map
+              ? (contact['Country']?.toString() ?? contact['Cntry']?.toString())
+              : null;
+          final countryRoom = room is Map ? room['Country']?.toString() : null;
+          final countryFinal = country ?? countryRoom ?? '';
+          if (countryFinal.isNotEmpty) _selectedCountryName = countryFinal;
+
+          final state = contact is Map
+              ? (contact['State']?.toString() ??
+                    contact['Stt']?.toString() ??
+                    contact['Province']?.toString())
+              : null;
+          final stateRoom = room is Map
+              ? (room['State']?.toString() ?? room['Stt']?.toString())
+              : null;
+          final stateFinal = state ?? stateRoom ?? '';
+          if (stateFinal.isNotEmpty) _selectedStateName = stateFinal;
+
+          final city = contact is Map
+              ? (contact['City']?.toString() ?? contact['Cty']?.toString())
+              : null;
+          final cityRoom = room is Map
+              ? (room['City']?.toString() ?? room['Cty']?.toString())
+              : null;
+          final cityFinal = city ?? cityRoom ?? '';
+          if (cityFinal.isNotEmpty) _selectedCityName = cityFinal;
+
+          final photo = contact is Map ? contact['Photo']?.toString() : null;
+          final photoRoom = room is Map
+              ? (room['CtImg']?.toString() ?? room['LinkImg']?.toString())
+              : null;
+          final photoFinal = photo ?? photoRoom ?? '';
+          if (photoFinal.isNotEmpty) {
+            _currentAvatarUrl = photoFinal.startsWith('http')
+                ? photoFinal
+                : 'https://id.nobox.ai/upload/$photoFinal';
           }
 
           _isLoadingContact = false;
         });
       } else {
-        // Server data kosong, coba dari lokal
         final chatProvider2 = Provider.of<ChatProvider>(context, listen: false);
         final localLocation = chatProvider2.getSavedContactLocation(
           widget.chat.id,
@@ -262,11 +373,25 @@ class _EditContactPageState extends State<EditContactPage> {
         }
       } catch (_) {}
       if (mounted) setState(() => _isLoadingContact = false);
+    } finally {
+      if (mounted) setState(() => _isLoadingContact = false);
     }
   }
 
   Future<void> _loadCountries() async {
+    // Gunakan static cache agar ratusan data negara hanya di-decode SEKALI
+    if (_cachedCountries != null && _cachedCountries!.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _countries = _cachedCountries!;
+          _isLoadingCountries = false;
+        });
+      }
+      return;
+    }
+
     final countries = await csc.getAllCountries();
+    _cachedCountries = countries;
     if (mounted) {
       setState(() {
         _countries = countries;
@@ -284,10 +409,25 @@ class _EditContactPageState extends State<EditContactPage> {
   }
 
   Future<void> _loadCities(String countryCode, String stateCode) async {
-    setState(() => _cities = []);
-    final cities = await csc.getStateCities(countryCode, stateCode);
-    if (mounted) {
-      setState(() => _cities = cities);
+    setState(() {
+      _cities = [];
+      _isLoadingCities = true;
+    });
+    try {
+      final cities = await csc.getStateCities(countryCode, stateCode);
+      if (mounted) {
+        setState(() {
+          _cities = cities;
+          _isLoadingCities = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _cities = [];
+          _isLoadingCities = false;
+        });
+      }
     }
   }
 
@@ -384,15 +524,26 @@ class _EditContactPageState extends State<EditContactPage> {
                   }
                 }
 
-                // OPTIMISTIC UI: simpan data teks secara lokal seketika dan
-                // jalankan sinkronisasi HTTP server di background, tanpa
-                // memblokir navigasi kembali ke halaman detail.
-                unawaited(
-                  chatProvider.updateContactInfo(widget.chat.id, contactData),
+                // Tampilkan loading dialog sementara menyimpan data.
+                // GUNAKAN await agar data lokasi tersimpan ke memori &
+                // SharedPreferences SEBELUM halaman detail me-refresh.
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (_) => const Center(
+                    child: CircularProgressIndicator(color: Colors.blue),
+                  ),
                 );
 
+                await chatProvider.updateContactInfo(
+                  widget.chat.id,
+                  contactData,
+                );
+
+                // data lokasi SUDAH tersimpan ke cache lokal — sekarang aman pop
                 if (mounted) {
-                  Navigator.pop(context, true);
+                  Navigator.pop(context); // tutup loading dialog
+                  Navigator.pop(context, true); // kembali ke ContactInfoPage
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Contact saved successfully!'),
@@ -722,7 +873,7 @@ class _EditContactPageState extends State<EditContactPage> {
                               ? 'Select state first'
                               : 'Select a city',
                           isDark: isDark,
-                          onTap: _selectedStateCode == null
+                          onTap: _selectedStateName == null
                               ? null
                               : () => _showCityPicker(isDark),
                         ),
@@ -765,8 +916,9 @@ class _EditContactPageState extends State<EditContactPage> {
                 ],
               ),
             ),
-            // Loading overlay saat data contact sedang dimuat
-            if (_isLoadingContact)
+            // Loading overlay — hanya tampil jika benar-benar belum ada data nama/lokasi,
+            // agar form tidak diblokir oleh spinner saat data lokal sudah terisi (instan).
+            if (_isLoadingContact && _nameController.text.isEmpty)
               Positioned.fill(
                 child: Container(
                   color: isDark ? Colors.black54 : Colors.white70,
@@ -1149,17 +1301,46 @@ class _EditContactPageState extends State<EditContactPage> {
     );
   }
 
-  void _showCityPicker(bool isDark) {
+  Future<void> _showCityPicker(bool isDark) async {
     if (_locationOverlayEntry != null && _activeLocationKey == _cityKey) {
       _removeLocationOverlay();
       return;
     }
-    if (_cities.isEmpty) {
+
+    if (_selectedStateName == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Loading cities, please wait...')),
+        const SnackBar(
+          content: Text('Silakan pilih provinsi terlebih dahulu.'),
+        ),
       );
       return;
     }
+
+    if (_isLoadingCities) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sedang memuat daftar kota, mohon tunggu sebentar...'),
+        ),
+      );
+      return;
+    }
+
+    // Jika kota belum ter-load tapi kodenya ada, muat sekarang
+    if (_cities.isEmpty &&
+        _selectedCountryCode != null &&
+        _selectedStateCode != null) {
+      await _loadCities(_selectedCountryCode!, _selectedStateCode!);
+    }
+
+    // Jika setelah dicoba list kota tetap kosong (library tidak punya data kota),
+    // buka dialog input manual
+    if (_cities.isEmpty) {
+      if (mounted) {
+        _showManualCityInputDialog(context, isDark);
+      }
+      return;
+    }
+
     _showLocationOverlay<csc.City>(
       isDark: isDark,
       anchorKey: _cityKey,
@@ -1169,6 +1350,85 @@ class _EditContactPageState extends State<EditContactPage> {
         setState(() {
           _selectedCityName = city.name;
         });
+      },
+      onManualInputRequested: () {
+        _showManualCityInputDialog(context, isDark);
+      },
+    );
+  }
+
+  void _showManualCityInputDialog(BuildContext context, bool isDark) {
+    final textController = TextEditingController(text: _selectedCityName ?? '');
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: isDark ? const Color(0xFF1F2C34) : Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Input Nama Kota',
+            style: TextStyle(
+              color: isDark ? Colors.white : Colors.black87,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Daftar kota otomatis tidak tersedia atau kota Anda belum terdaftar. Masukkan nama kota secara manual:',
+                style: TextStyle(
+                  color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: textController,
+                autofocus: true,
+                style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+                decoration: InputDecoration(
+                  labelText: 'Nama Kota',
+                  hintText: 'Contoh: Surabaya, Sidoarjo, Bandung, dll.',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              onPressed: () {
+                final text = textController.text.trim();
+                if (text.isNotEmpty) {
+                  setState(() {
+                    _selectedCityName = text;
+                  });
+                }
+                Navigator.pop(ctx);
+              },
+              child: const Text(
+                'Simpan',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        );
       },
     );
   }
@@ -1186,6 +1446,7 @@ class _EditContactPageState extends State<EditContactPage> {
     required List<T> items,
     required String Function(T) getName,
     required void Function(T) onSelected,
+    VoidCallback? onManualInputRequested,
   }) {
     _removeLocationOverlay();
 
@@ -1303,13 +1564,72 @@ class _EditContactPageState extends State<EditContactPage> {
                             child: filteredItems.isEmpty
                                 ? Padding(
                                     padding: const EdgeInsets.all(16.0),
-                                    child: Center(
-                                      child: Text(
-                                        'No results found',
-                                        style: TextStyle(
-                                          color: Colors.grey.shade500,
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Tidak ditemukan di daftar.',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade500,
+                                            fontSize: 13,
+                                          ),
                                         ),
-                                      ),
+                                        if (onManualInputRequested != null &&
+                                            _locationSearchController.text
+                                                .trim()
+                                                .isNotEmpty) ...[
+                                          const SizedBox(height: 8),
+                                          InkWell(
+                                            onTap: () {
+                                              setState(() {
+                                                _selectedCityName =
+                                                    _locationSearchController
+                                                        .text
+                                                        .trim();
+                                              });
+                                              _removeLocationOverlay();
+                                            },
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 8,
+                                                    horizontal: 12,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.blue.withOpacity(
+                                                  0.1,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(
+                                                    Icons.add,
+                                                    size: 18,
+                                                    color: Colors.blue,
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  Flexible(
+                                                    child: Text(
+                                                      'Gunakan "${_locationSearchController.text.trim()}"',
+                                                      style: const TextStyle(
+                                                        color: Colors.blue,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        fontSize: 13,
+                                                      ),
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   )
                                 : ListView.builder(

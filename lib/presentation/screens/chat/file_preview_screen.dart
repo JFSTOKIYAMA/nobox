@@ -146,7 +146,9 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
     final playing = value.isPlaying;
     final pos = value.position;
     final dur = value.duration;
-    if (playing != _isVideoPlaying || pos != _videoPosition || dur != _videoDuration) {
+    if (playing != _isVideoPlaying ||
+        pos != _videoPosition ||
+        dur != _videoDuration) {
       setState(() {
         _isVideoPlaying = playing;
         _videoPosition = pos;
@@ -259,11 +261,7 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
         child: Column(
           children: [
             // ── Preview Area ──
-            Expanded(
-              child: Center(
-                child: _buildPreviewBody(),
-              ),
-            ),
+            Expanded(child: Center(child: _buildPreviewBody())),
 
             // ── Send Button ──
             Padding(
@@ -342,6 +340,20 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
   //  VIDEO PREVIEW
   // ─────────────────────────────────────────────
 
+  /// Helper: calculate the true display aspect ratio accounting for
+  /// camera rotation metadata (90°/270° swaps width and height).
+  double _getVideoAspectRatio(VideoPlayerController? controller) {
+    if (controller == null || !controller.value.isInitialized) return 16 / 9;
+    final size = controller.value.size;
+    final rotation = controller.value.rotationCorrection;
+    if (size.width == 0 || size.height == 0) return 1.0;
+    // If video is rotated 90° or 270° by phone camera metadata, swap width & height
+    final isRotated = rotation == 90 || rotation == 270;
+    final width = isRotated ? size.height : size.width;
+    final height = isRotated ? size.width : size.height;
+    return width / height;
+  }
+
   Widget _buildVideoPreview() {
     // ── Initial State: thumbnail + play overlay ──
     if (!_videoActiveMode) {
@@ -358,30 +370,32 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.15),
+            width: 1,
+          ),
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Thumbnail area with play overlay
-            AspectRatio(
-              aspectRatio: 16 / 12,
-              child: GestureDetector(
-                onTap: _activateVideoPlayer,
+            // Thumbnail area with play overlay — flexible aspect ratio
+            GestureDetector(
+              onTap: _activateVideoPlayer,
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 450),
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    // Thumbnail or placeholder
+                    // Thumbnail or placeholder — use BoxFit.contain to preserve original ratio
                     if (_videoThumbnail != null)
                       Image.memory(
                         _videoThumbnail!,
-                        fit: BoxFit.cover,
+                        fit: BoxFit.contain,
                         width: double.infinity,
-                        height: double.infinity,
                       )
                     else
-                      Container(color: Colors.black),
+                      Container(height: 250, color: Colors.black),
 
                     // Loading spinner
                     if (_isLoadingThumbnail)
@@ -430,10 +444,7 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
                   const Spacer(),
                   Text(
                     'Tap to preview',
-                    style: TextStyle(
-                      color: Colors.grey[500],
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: Colors.grey[500], fontSize: 13),
                   ),
                 ],
               ),
@@ -447,25 +458,41 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
   /// Active State — full video player with controls overlay.
   Widget _buildVideoActiveState() {
     final totalMs = _videoDuration.inMilliseconds.toDouble();
-    final currentMs = _videoPosition.inMilliseconds.toDouble().clamp(0.0, totalMs);
+    final currentMs = _videoPosition.inMilliseconds.toDouble().clamp(
+      0.0,
+      totalMs,
+    );
+    final aspect = _getVideoAspectRatio(_videoController);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.15),
+            width: 1,
+          ),
         ),
         clipBehavior: Clip.antiAlias,
         child: AspectRatio(
-          aspectRatio: (_videoController?.value.aspectRatio ?? 1.0).clamp(0.5, 3.0),
+          aspectRatio: aspect,
           child: GestureDetector(
             onTap: _toggleControls,
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // Video player
-                VideoPlayer(_videoController!),
+                // Video player — wrapped in FittedBox to handle rotation correction
+                Center(
+                  child: FittedBox(
+                    fit: BoxFit.contain,
+                    child: SizedBox(
+                      width: _videoController!.value.size.width,
+                      height: _videoController!.value.size.height,
+                      child: VideoPlayer(_videoController!),
+                    ),
+                  ),
+                ),
 
                 // Controls overlay with fade animation
                 AnimatedOpacity(
@@ -493,7 +520,9 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
-                                _isVideoPlaying ? Icons.pause : Icons.play_arrow,
+                                _isVideoPlaying
+                                    ? Icons.pause
+                                    : Icons.play_arrow,
                                 color: Colors.white,
                                 size: 36,
                               ),
@@ -504,7 +533,10 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
 
                           // Bottom control bar
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 begin: Alignment.bottomCenter,
@@ -522,15 +554,25 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
                                 SliderTheme(
                                   data: SliderThemeData(
                                     trackHeight: 3,
-                                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                                    thumbShape: const RoundSliderThumbShape(
+                                      enabledThumbRadius: 6,
+                                    ),
+                                    overlayShape: const RoundSliderOverlayShape(
+                                      overlayRadius: 12,
+                                    ),
                                     activeTrackColor: const Color(0xFF4A90E2),
-                                    inactiveTrackColor: Colors.white.withValues(alpha: 0.3),
+                                    inactiveTrackColor: Colors.white.withValues(
+                                      alpha: 0.3,
+                                    ),
                                     thumbColor: const Color(0xFF4A90E2),
-                                    overlayColor: const Color(0xFF4A90E2).withValues(alpha: 0.2),
+                                    overlayColor: const Color(
+                                      0xFF4A90E2,
+                                    ).withValues(alpha: 0.2),
                                   ),
                                   child: Slider(
-                                    value: totalMs > 0 ? currentMs / totalMs : 0.0,
+                                    value: totalMs > 0
+                                        ? currentMs / totalMs
+                                        : 0.0,
                                     onChanged: (value) {
                                       _controlsTimer?.cancel();
                                       final newPosition = Duration(
@@ -538,13 +580,16 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
                                       );
                                       _videoController?.seekTo(newPosition);
                                     },
-                                    onChangeEnd: (_) => _startControlsAutoHide(),
+                                    onChangeEnd: (_) =>
+                                        _startControlsAutoHide(),
                                   ),
                                 ),
 
                                 // Time labels + action buttons
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
                                   child: Row(
                                     children: [
                                       // Current time
@@ -579,7 +624,9 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
                                       GestureDetector(
                                         onTap: _toggleMute,
                                         child: Icon(
-                                          _isMuted ? Icons.volume_off : Icons.volume_up,
+                                          _isMuted
+                                              ? Icons.volume_off
+                                              : Icons.volume_up,
                                           color: Colors.white,
                                           size: 22,
                                         ),
@@ -650,10 +697,7 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
                     const SizedBox(height: 6),
                     Text(
                       _fileSizeLabel,
-                      style: TextStyle(
-                        color: Colors.grey[500],
-                        fontSize: 14,
-                      ),
+                      style: TextStyle(color: Colors.grey[500], fontSize: 14),
                     ),
                   ],
                 ],
@@ -695,7 +739,8 @@ class _FullscreenVideoOverlay extends StatefulWidget {
   const _FullscreenVideoOverlay({required this.controller});
 
   @override
-  State<_FullscreenVideoOverlay> createState() => _FullscreenVideoOverlayState();
+  State<_FullscreenVideoOverlay> createState() =>
+      _FullscreenVideoOverlayState();
 }
 
 class _FullscreenVideoOverlayState extends State<_FullscreenVideoOverlay> {
@@ -753,7 +798,10 @@ class _FullscreenVideoOverlayState extends State<_FullscreenVideoOverlay> {
   Widget build(BuildContext context) {
     final value = widget.controller.value;
     final totalMs = value.duration.inMilliseconds.toDouble();
-    final currentMs = value.position.inMilliseconds.toDouble().clamp(0.0, totalMs);
+    final currentMs = value.position.inMilliseconds.toDouble().clamp(
+      0.0,
+      totalMs,
+    );
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -765,10 +813,19 @@ class _FullscreenVideoOverlayState extends State<_FullscreenVideoOverlay> {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            Center(child: AspectRatio(
-              aspectRatio: value.aspectRatio.clamp(0.5, 3.0),
-              child: VideoPlayer(widget.controller),
-            )),
+            Center(
+              child: AspectRatio(
+                aspectRatio: value.aspectRatio > 0 ? value.aspectRatio : 1.0,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: SizedBox(
+                    width: value.size.width,
+                    height: value.size.height,
+                    child: VideoPlayer(widget.controller),
+                  ),
+                ),
+              ),
+            ),
 
             // Controls
             AnimatedOpacity(
@@ -817,7 +874,11 @@ class _FullscreenVideoOverlayState extends State<_FullscreenVideoOverlay> {
                             color: Colors.black.withValues(alpha: 0.5),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.fullscreen_exit, color: Colors.white, size: 24),
+                          child: const Icon(
+                            Icons.fullscreen_exit,
+                            color: Colors.white,
+                            size: 24,
+                          ),
                         ),
                       ),
                     ),
@@ -829,27 +890,49 @@ class _FullscreenVideoOverlayState extends State<_FullscreenVideoOverlay> {
                       bottom: 16,
                       child: Row(
                         children: [
-                          Text(_fmt(value.position), style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace')),
+                          Text(
+                            _fmt(value.position),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
                           Expanded(
                             child: SliderTheme(
                               data: SliderThemeData(
                                 trackHeight: 3,
-                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 6,
+                                ),
                                 activeTrackColor: const Color(0xFF4A90E2),
-                                inactiveTrackColor: Colors.white.withValues(alpha: 0.3),
+                                inactiveTrackColor: Colors.white.withValues(
+                                  alpha: 0.3,
+                                ),
                                 thumbColor: const Color(0xFF4A90E2),
                               ),
                               child: Slider(
                                 value: totalMs > 0 ? currentMs / totalMs : 0.0,
                                 onChanged: (v) {
                                   _autoHideTimer?.cancel();
-                                  widget.controller.seekTo(Duration(milliseconds: (v * totalMs).round()));
+                                  widget.controller.seekTo(
+                                    Duration(
+                                      milliseconds: (v * totalMs).round(),
+                                    ),
+                                  );
                                 },
                                 onChangeEnd: (_) => _startAutoHide(),
                               ),
                             ),
                           ),
-                          Text(_fmt(value.duration), style: TextStyle(color: Colors.grey[400], fontSize: 12, fontFamily: 'monospace')),
+                          Text(
+                            _fmt(value.duration),
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 12,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
                         ],
                       ),
                     ),

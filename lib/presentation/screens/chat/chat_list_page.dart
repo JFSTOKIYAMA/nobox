@@ -379,36 +379,68 @@ class _ChatListPageState extends State<ChatListPage>
                           });
                         },
                       ),
-                      Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.filter_alt,
-                              color: Colors.white,
-                              size: 27,
-                            ),
-                            padding: const EdgeInsets.all(8),
-                            onPressed: () {
-                              _showFilterDialog();
-                            },
-                          ),
-                          if (context
-                              .watch<ChatProvider>()
-                              .hasActiveAdvancedFilters)
-                            Positioned(
-                              right: 6,
-                              top: 6,
-                              child: Container(
-                                width: 8,
-                                height: 8,
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.red,
+                      Builder(
+                        builder: (ctx) {
+                          final chatProvider = ctx.watch<ChatProvider>();
+                          final isFilterActive =
+                              chatProvider.hasAnyActiveFilter;
+                          final filterCount = chatProvider.activeFiltersCount;
+
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  isFilterActive
+                                      ? Icons.filter_alt
+                                      : Icons.filter_alt_outlined,
+                                  color: isFilterActive
+                                      ? Colors.amber
+                                      : Colors.white,
+                                  size: 27,
                                 ),
+                                padding: const EdgeInsets.all(8),
+                                tooltip: isFilterActive
+                                    ? 'Filter Aktif ($filterCount)'
+                                    : 'Filter',
+                                onPressed: () {
+                                  _showFilterDialog();
+                                },
                               ),
-                            ),
-                        ],
+                              if (isFilterActive)
+                                Positioned(
+                                  right: 4,
+                                  top: 4,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.amber.shade700,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    constraints: const BoxConstraints(
+                                      minWidth: 16,
+                                      minHeight: 16,
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        filterCount > 9 ? '9+' : '$filterCount',
+                                        style: const TextStyle(
+                                          color: Colors.black,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          height: 1.0,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
                       ),
                       PopupMenuButton<String>(
                         icon: const Icon(

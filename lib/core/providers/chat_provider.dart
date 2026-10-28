@@ -485,6 +485,29 @@ class ChatProvider with ChangeNotifier {
       _filterTags != null ||
       _filterHumanAgent != null;
 
+  /// Menghitung total jumlah filter yang sedang aktif (termasuk filter status tab).
+  int get activeFiltersCount {
+    int count = 0;
+    if (_filterMuteAi != null) count++;
+    if (_filterReadStatus != null) count++;
+    if (_filterChannel != null) count++;
+    if (_filterChatType != null) count++;
+    if (_filterAccountIds.isNotEmpty) count += _filterAccountIds.length;
+    if (_filterContact != null) count++;
+    if (_filterLink != null) count++;
+    if (_filterGroup != null) count++;
+    if (_filterCampaign != null) count++;
+    if (_filterFunnel != null) count++;
+    if (_filterDeal != null) count++;
+    if (_filterTags != null) count++;
+    if (_filterHumanAgent != null) count++;
+    if (_activeFilter != 'All' && _activeFilter != 'Semua') count++;
+    return count;
+  }
+
+  /// Mengembalikan true jika ada filter apapun yang aktif (advanced + status tab).
+  bool get hasAnyActiveFilter => activeFiltersCount > 0;
+
   void setSearchQuery(String query) {
     _searchQuery = query;
     if (_cachedContactsResponse == null && query.isNotEmpty) {
@@ -1047,7 +1070,7 @@ class ChatProvider with ChangeNotifier {
           }
 
           // Terapkan nama dari persistent storage (menang atas semua sumber lain)
-          final persistedName = _savedContactNames[chat.id];
+          final persistedName = getSavedContactName(chat);
           if (persistedName != null && persistedName.isNotEmpty) {
             chat = chat.copyWith(sender: persistedName);
           }
@@ -2195,7 +2218,7 @@ class ChatProvider with ChangeNotifier {
               }
             }
             // Terapkan nama dari persistent storage (prioritas tertinggi)
-            final persistedName = _savedContactNames[chat.id];
+            final persistedName = getSavedContactName(chat);
             if (persistedName != null && persistedName.isNotEmpty) {
               chat = chat.copyWith(sender: persistedName);
             }
@@ -2466,7 +2489,7 @@ class ChatProvider with ChangeNotifier {
           chat = _applyTagAndFunnelMapping(chat, c);
 
           // Terapkan nama dari persistent storage (prioritas tertinggi)
-          final persistedName = _savedContactNames[chat.id];
+          final persistedName = getSavedContactName(chat);
           if (persistedName != null && persistedName.isNotEmpty) {
             chat = chat.copyWith(sender: persistedName);
           }
@@ -2941,13 +2964,53 @@ class ChatProvider with ChangeNotifier {
   }
 
   /// Ambil data lokasi kontak yang disimpan secara lokal.
-  Map<String, String>? getSavedContactLocation(String roomId) {
-    return _savedContactLocations[roomId];
+  /// Mendukung lookup melalui roomId, extId (nomor WhatsApp), contactId, dan ctRealId.
+  Map<String, String>? getSavedContactLocation(String id) {
+    if (_savedContactLocations.containsKey(id)) {
+      return _savedContactLocations[id];
+    }
+    // Cek jika ID cocok dengan salah satu chat extId/contactId/ctRealId
+    for (final chat in _chats) {
+      if (chat.id == id &&
+          chat.extId.isNotEmpty &&
+          _savedContactLocations.containsKey(chat.extId)) {
+        return _savedContactLocations[chat.extId];
+      }
+      if (chat.extId == id && _savedContactLocations.containsKey(chat.id)) {
+        return _savedContactLocations[chat.id];
+      }
+      if (chat.contactId == id && _savedContactLocations.containsKey(chat.id)) {
+        return _savedContactLocations[chat.id];
+      }
+      if (chat.ctRealId == id && _savedContactLocations.containsKey(chat.id)) {
+        return _savedContactLocations[chat.id];
+      }
+    }
+    return null;
   }
 
-  /// Ambil nama kontak yang disimpan secara lokal (optimistic save).
-  String? getSavedContactName(String roomId) {
+  /// Mengambil nama kontak yang tersimpan berdasarkan RoomId, Phone (ExtId), ContactId, atau CtRealId
+  String? getSavedContactNameByRoomId(String roomId) {
     return _savedContactNames[roomId];
+  }
+
+  /// Mengambil nama kontak yang tersimpan berdasarkan RoomId, Phone (ExtId), ContactId, atau CtRealId
+  String? getSavedContactName(ChatModel chat) {
+    if (_savedContactNames.containsKey(chat.id)) {
+      return _savedContactNames[chat.id];
+    }
+    if (chat.extId.isNotEmpty && _savedContactNames.containsKey(chat.extId)) {
+      return _savedContactNames[chat.extId];
+    }
+    if (chat.contactId.isNotEmpty &&
+        _savedContactNames.containsKey(chat.contactId)) {
+      return _savedContactNames[chat.contactId];
+    }
+    if (chat.ctRealId.isNotEmpty &&
+        _savedContactNames.containsKey(chat.ctRealId)) {
+      return _savedContactNames[chat.ctRealId];
+    }
+    return null;
   }
 
   /// Ambil nama agent yang disimpan secara lokal (optimistic update).
@@ -4019,18 +4082,52 @@ class ChatProvider with ChangeNotifier {
     if (contactData['CtRealNm'] != null) {
       final newName = contactData['CtRealNm'].toString().trim();
       if (newName.isNotEmpty) {
-        // 1. Update in-memory list
-        final index = _chats.indexWhere((c) => c.id == contactId);
-        if (index != -1) {
-          _chats[index] = _chats[index].copyWith(sender: newName);
+        // 1. Cari target chat referensi untuk mendapatkan extId, contactId, dan ctRealId
+        ChatModel? targetChat;
+        try {
+          targetChat = _chats.firstWhere((c) => c.id == contactId);
+        } catch (_) {}
+
+        // 2. Simpan nama baru ke _savedContactNames dengan multi-key (roomId, extId, contactId, ctRealId)
+        _savedContactNames[contactId] = newName;
+        if (targetChat != null) {
+          if (targetChat.extId.isNotEmpty)
+            _savedContactNames[targetChat.extId] = newName;
+          if (targetChat.contactId.isNotEmpty)
+            _savedContactNames[targetChat.contactId] = newName;
+          if (targetChat.ctRealId.isNotEmpty)
+            _savedContactNames[targetChat.ctRealId] = newName;
+        }
+        await _saveSavedContactNames();
+
+        // 3. Update SEMUA percakapan di in-memory list _chats yang memiliki kontak/nomor yang sama
+        bool anyUpdated = false;
+        for (int i = 0; i < _chats.length; i++) {
+          final c = _chats[i];
+          final isSameRoom = c.id == contactId;
+          final isSameExtId =
+              targetChat != null &&
+              targetChat.extId.isNotEmpty &&
+              c.extId == targetChat.extId;
+          final isSameContactId =
+              targetChat != null &&
+              targetChat.contactId.isNotEmpty &&
+              c.contactId == targetChat.contactId;
+          final isSameCtRealId =
+              targetChat != null &&
+              targetChat.ctRealId.isNotEmpty &&
+              c.ctRealId == targetChat.ctRealId;
+
+          if (isSameRoom || isSameExtId || isSameContactId || isSameCtRealId) {
+            _chats[i] = _chats[i].copyWith(sender: newName);
+            anyUpdated = true;
+          }
+        }
+        if (anyUpdated) {
           notifyListeners();
         }
-        // 2. Simpan ke persistent map
-        _savedContactNames[contactId] = newName;
-        // 3. Tulis ke disk segera (await agar pasti tersimpan sebelum hot restart)
-        await _saveSavedContactNames();
         debugPrint(
-          'ChatProvider: 💾 Optimistically saved contact name "$newName" for room $contactId',
+          'ChatProvider: 💾 Optimistically saved contact name "$newName" for room $contactId (synced all matching chats)',
         );
       }
     }
@@ -4044,10 +4141,30 @@ class ChatProvider with ChangeNotifier {
       }
     }
     if (locationFields.isNotEmpty) {
-      _savedContactLocations[contactId] = {
+      // Multi-key: simpan ke roomId DAN extId agar lookup dari mana pun tembus
+      final mergedLocation = {
         ...(_savedContactLocations[contactId] ?? {}),
         ...locationFields,
       };
+      _savedContactLocations[contactId] = mergedLocation;
+
+      // Cari targetChat untuk simpan ke extId, contactId, ctRealId juga
+      ChatModel? targetChat;
+      try {
+        targetChat = _chats.firstWhere((c) => c.id == contactId);
+      } catch (_) {}
+      if (targetChat != null) {
+        if (targetChat.extId.isNotEmpty) {
+          _savedContactLocations[targetChat.extId] = mergedLocation;
+        }
+        if (targetChat.contactId.isNotEmpty) {
+          _savedContactLocations[targetChat.contactId] = mergedLocation;
+        }
+        if (targetChat.ctRealId.isNotEmpty) {
+          _savedContactLocations[targetChat.ctRealId] = mergedLocation;
+        }
+      }
+
       await _saveSavedContactLocations();
       debugPrint(
         'ChatProvider: 💾 Optimistically saved location for room $contactId: $locationFields',

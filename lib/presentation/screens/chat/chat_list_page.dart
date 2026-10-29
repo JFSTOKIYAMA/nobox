@@ -1274,6 +1274,7 @@ class _ChatListPageState extends State<ChatListPage>
         'Contact'; // Contact, Link, Manual (or Group, Link, Manual)
     String? selectedContact;
     String? selectedGroup;
+    String? selectedLink;
     String manualInput = '';
     String initialMessage = 'Hello';
 
@@ -1282,6 +1283,7 @@ class _ChatListPageState extends State<ChatListPage>
     List<Map<String, dynamic>> accounts = [];
     List<Map<String, dynamic>> contacts = [];
     List<Map<String, dynamic>> groups = [];
+    List<Map<String, dynamic>> links = [];
     bool isLoadingData = true;
     String? loadError;
     bool isCreatingRoom = false;
@@ -1302,6 +1304,7 @@ class _ChatListPageState extends State<ChatListPage>
                     chatService.getAccounts(),
                     chatService.getContacts(),
                     chatService.getGroups(),
+                    chatService.getLinks(),
                   ]);
 
                   final channelResp =
@@ -1312,6 +1315,8 @@ class _ChatListPageState extends State<ChatListPage>
                       results[2] as ApiResponse<List<Map<String, dynamic>>>;
                   final groupResp =
                       results[3] as ApiResponse<List<Map<String, dynamic>>>;
+                  final linkResp =
+                      results[4] as ApiResponse<List<Map<String, dynamic>>>;
 
                   setDialogState(() {
                     isLoadingData = false;
@@ -1349,6 +1354,9 @@ class _ChatListPageState extends State<ChatListPage>
                     }
                     if (!groupResp.isError && groupResp.data != null) {
                       groups = groupResp.data!;
+                    }
+                    if (!linkResp.isError && linkResp.data != null) {
+                      links = linkResp.data!;
                     }
                   });
                 } catch (e) {
@@ -1665,6 +1673,13 @@ class _ChatListPageState extends State<ChatListPage>
               'Nm',
               'nm',
               'GroupName',
+            ]);
+            final linkNames = _toUniqueNames(links, [
+              'Name',
+              'DisplayName',
+              'Nm',
+              'Title',
+              'LinkTmp',
             ]);
 
             final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -1995,41 +2010,19 @@ class _ChatListPageState extends State<ChatListPage>
                             ),
                           )
                         else if (selectedTo == 'Link')
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            child: Row(
-                              children: [
-                                const SizedBox(
-                                  width: 80,
-                                  child: Text(
-                                    'Link',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: TextField(
-                                    decoration: InputDecoration(
-                                      hintText: selectedChat == 'Group'
-                                          ? 'Paste group link...'
-                                          : 'Paste link...',
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 10,
-                                          ),
-                                    ),
-                                    onChanged: (val) => manualInput = val,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          buildDropdownRow(
+                            'Link',
+                            selectedLink,
+                            linkNames,
+                            (val) {
+                              setDialogState(() => selectedLink = val);
+                            },
+                            enabled: selectedChannel != null,
+                            hintText: selectedChannel == null
+                                ? 'Select Channel first'
+                                : (linkNames.isEmpty
+                                      ? 'No links for this channel'
+                                      : '--select--'),
                           ),
 
                         const SizedBox(height: 24),
@@ -2122,10 +2115,13 @@ class _ChatListPageState extends State<ChatListPage>
                                             );
                                             return;
                                           } else if (selectedTo == 'Link' &&
-                                              manualInput.trim().isEmpty) {
+                                              (selectedLink == null ||
+                                                  selectedLink!
+                                                      .trim()
+                                                      .isEmpty)) {
                                             showValidationToast(
                                               'Kolom Belum Lengkap!',
-                                              'Silakan masukkan ID Tautan (Link) grup tujuan.',
+                                              'Silakan pilih Data Link tujuan dari daftar.',
                                             );
                                             return;
                                           }
@@ -2151,10 +2147,13 @@ class _ChatListPageState extends State<ChatListPage>
                                             );
                                             return;
                                           } else if (selectedTo == 'Link' &&
-                                              manualInput.trim().isEmpty) {
+                                              (selectedLink == null ||
+                                                  selectedLink!
+                                                      .trim()
+                                                      .isEmpty)) {
                                             showValidationToast(
                                               'Kolom Belum Lengkap!',
-                                              'Silakan masukkan ID Tautan (Link) tujuan.',
+                                              'Silakan pilih Data Link tujuan dari daftar.',
                                             );
                                             return;
                                           }
@@ -2238,15 +2237,26 @@ class _ChatListPageState extends State<ChatListPage>
                                                 'ChatList: Receiver (GroupId): $receiver, Parsed GrpId: $groupId, GroupName: $groupName',
                                               );
                                             }
-                                          } else if (selectedTo == 'Manual' ||
-                                              selectedTo == 'Link') {
+                                          } else if (selectedTo == 'Manual') {
                                             receiver = manualInput;
                                             groupId = int.tryParse(manualInput);
                                             groupName = manualInput;
-                                            if (selectedTo == 'Link') {
+                                          } else if (selectedTo == 'Link' &&
+                                              selectedLink != null) {
+                                            final idx = linkNames.indexOf(
+                                              selectedLink!,
+                                            );
+                                            if (idx >= 0 &&
+                                                idx < links.length) {
+                                              final l = links[idx];
+                                              final rawLinkId =
+                                                  (l['Id'] ?? l['id'])
+                                                      ?.toString();
                                               linkId = int.tryParse(
-                                                manualInput,
+                                                rawLinkId ?? '',
                                               );
+                                              receiver =
+                                                  rawLinkId ?? selectedLink;
                                             }
                                           }
                                         } else {
@@ -2343,13 +2353,24 @@ class _ChatListPageState extends State<ChatListPage>
                                                 // To: 1 dengan CtId: contactId secara otomatis.
                                               }
                                             }
-                                          } else if (selectedTo == 'Manual' ||
-                                              selectedTo == 'Link') {
+                                          } else if (selectedTo == 'Manual') {
                                             receiver = manualInput;
-                                            if (selectedTo == 'Link') {
+                                          } else if (selectedTo == 'Link' &&
+                                              selectedLink != null) {
+                                            final idx = linkNames.indexOf(
+                                              selectedLink!,
+                                            );
+                                            if (idx >= 0 &&
+                                                idx < links.length) {
+                                              final l = links[idx];
+                                              final rawLinkId =
+                                                  (l['Id'] ?? l['id'])
+                                                      ?.toString();
                                               linkId = int.tryParse(
-                                                manualInput,
+                                                rawLinkId ?? '',
                                               );
+                                              receiver =
+                                                  rawLinkId ?? selectedLink;
                                             }
                                           }
                                         }

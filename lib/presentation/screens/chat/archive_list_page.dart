@@ -63,7 +63,7 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.unarchive, color: Colors.white),
+          icon: const Icon(Icons.archive, color: Colors.white),
           tooltip: 'Unarchive Selected',
           onPressed: () {
             final selectedCount = _selectedChats.length;
@@ -244,6 +244,35 @@ class _ArchiveListPageState extends State<ArchiveListPage> {
                         .toList();
                   }
 
+                  // TAMPILAN ANIMASI BERPUTAR-PUTAR SAAT SEDANG MEMUAT DATA
+                  if (chatProvider.isLoadingArchived && chats.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: isDark
+                                ? Colors.blue.shade400
+                                : Colors.blue.shade600,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Memuat percakapan arsip...',
+                            style: TextStyle(
+                              color: isDark
+                                  ? Colors.grey.shade400
+                                  : Colors.grey.shade600,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  // TAMPILAN KOSONG (Hanya jika loading selesai dan data memang tidak ada)
                   if (chats.isEmpty) {
                     return RefreshIndicator(
                       onRefresh: () => chatProvider.syncArchivedConversations(),

@@ -9,6 +9,7 @@ import 'conversation_history_page.dart';
 import '../../widgets/tag_selection_dialog.dart';
 import '../../widgets/add_funnel_dialog.dart';
 import '../../../core/services/filter_api_service.dart';
+import '../../../core/services/chat_service.dart';
 import '../../../core/model/filter_data_item.dart';
 import '../../../core/model/api_response.dart';
 import '../../widgets/searchable_dropdown.dart';
@@ -1394,7 +1395,14 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: isDark
+                    ? const Color(0xFF60A5FA)
+                    : const Color(0xFF3B82F6),
+              ),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -2961,15 +2969,156 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                                             .toList();
 
                                         if (filtered.isEmpty) {
-                                          return const Padding(
-                                            padding: EdgeInsets.all(16),
+                                          final query = _funnelSearchController
+                                              .text
+                                              .trim();
+                                          return Padding(
+                                            padding: const EdgeInsets.all(16),
                                             child: Center(
-                                              child: Text(
-                                                'Funnel not found',
-                                                style: TextStyle(
-                                                  color: Colors.grey,
-                                                  fontSize: 13,
-                                                ),
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    query.isEmpty
+                                                        ? 'Tidak ada funnel'
+                                                        : 'Funnel "$query" belum ada',
+                                                    style: const TextStyle(
+                                                      color: Colors.grey,
+                                                    ),
+                                                  ),
+                                                  if (query.isNotEmpty) ...[
+                                                    const SizedBox(height: 8),
+                                                    ElevatedButton.icon(
+                                                      onPressed: () async {
+                                                        final chatService =
+                                                            ChatService();
+                                                        final res =
+                                                            await chatService
+                                                                .createFunnel(
+                                                                  query,
+                                                                );
+                                                        if (res.isError ||
+                                                            res.data == null) {
+                                                          if (mounted) {
+                                                            ScaffoldMessenger.of(
+                                                              context,
+                                                            ).showSnackBar(
+                                                              SnackBar(
+                                                                content: Text(
+                                                                  res.error ??
+                                                                      'Gagal membuat funnel',
+                                                                ),
+                                                              ),
+                                                            );
+                                                          }
+                                                          return;
+                                                        }
+                                                        final newId = res
+                                                            .data!['id']!
+                                                            .toString();
+                                                        final newName = res
+                                                            .data!['name']!
+                                                            .toString();
+
+                                                        if (mounted) {
+                                                          setState(() {
+                                                            _cachedFunnelItems
+                                                                .add({
+                                                                  'id': newId,
+                                                                  'name':
+                                                                      newName,
+                                                                });
+                                                            _currentFunnel =
+                                                                newName;
+                                                            _isFunnelExpanded =
+                                                                false;
+                                                            _funnelSearchController
+                                                                .clear();
+                                                          });
+                                                          final provider =
+                                                              Provider.of<
+                                                                ChatProvider
+                                                              >(
+                                                                context,
+                                                                listen: false,
+                                                              );
+                                                          provider
+                                                              .registerNewFunnel(
+                                                                id: newId,
+                                                                name: newName,
+                                                              );
+                                                          provider
+                                                              .updateContactFunnel(
+                                                                widget.chat.id,
+                                                                newId,
+                                                                funnelName:
+                                                                    newName,
+                                                              );
+
+                                                          ScaffoldMessenger.of(
+                                                            context,
+                                                          ).hideCurrentSnackBar();
+                                                          ScaffoldMessenger.of(
+                                                            context,
+                                                          ).showSnackBar(
+                                                            const SnackBar(
+                                                              content: Row(
+                                                                children: [
+                                                                  Icon(
+                                                                    Icons
+                                                                        .check_circle,
+                                                                    color: Colors
+                                                                        .white,
+                                                                    size: 20,
+                                                                  ),
+                                                                  SizedBox(
+                                                                    width: 10,
+                                                                  ),
+                                                                  Text(
+                                                                    'Funnel successfully make it',
+                                                                    style: TextStyle(
+                                                                      color: Colors
+                                                                          .white,
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w600,
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                              backgroundColor:
+                                                                  Color(
+                                                                    0xFF10B981,
+                                                                  ),
+                                                              behavior:
+                                                                  SnackBarBehavior
+                                                                      .floating,
+                                                            ),
+                                                          );
+                                                        }
+                                                      },
+                                                      icon: const Icon(
+                                                        Icons.add,
+                                                        size: 18,
+                                                      ),
+                                                      label: Text(
+                                                        'Buat funnel "$query"',
+                                                      ),
+                                                      style: ElevatedButton.styleFrom(
+                                                        backgroundColor:
+                                                            Colors.blue,
+                                                        foregroundColor:
+                                                            Colors.white,
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                8,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
                                               ),
                                             ),
                                           );
@@ -3432,7 +3581,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                 isDark: isDark,
                 children: [
                   InkWell(
-                    onTap: _showAgentDialog,
+                    onTap: widget.chat.isArchived ? null : _showAgentDialog,
                     child: _buildSectionHeader(
                       isDark: isDark,
                       title: 'Human Agent',
@@ -3446,7 +3595,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                           horizontal: 16,
                           vertical: 4,
                         ),
-                        onTap: _showAgentDialog,
+                        onTap: widget.chat.isArchived ? null : _showAgentDialog,
                         leading: CircleAvatar(
                           radius: 20,
                           backgroundColor: Colors.grey.shade200,
@@ -3476,174 +3625,186 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                               )
                             : null,
                         trailing: InkWell(
-                          onTap: () async {
-                            // 1. Tampilkan Dialog Konfirmasi (2 Langkah)
-                            final confirm = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx) {
-                                final isDarkDialog =
-                                    Theme.of(ctx).brightness == Brightness.dark;
-                                return AlertDialog(
-                                  backgroundColor: isDarkDialog
-                                      ? const Color(0xFF1F2C34)
-                                      : Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  title: Text(
-                                    'Hapus Human Agent',
-                                    style: TextStyle(
-                                      color: isDarkDialog
-                                          ? Colors.white
-                                          : Colors.black87,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 18,
-                                    ),
-                                  ),
-                                  content: Text(
-                                    'Apakah Anda yakin ingin menghapus ${_currentAgentName.isNotEmpty ? _currentAgentName : "agen"} dari percakapan ini?',
-                                    style: TextStyle(
-                                      color: isDarkDialog
-                                          ? Colors.grey.shade300
-                                          : Colors.black87,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, false),
-                                      child: Text(
-                                        'Batal',
-                                        style: TextStyle(
-                                          color: isDarkDialog
-                                              ? Colors.grey.shade400
-                                              : Colors.grey.shade600,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                    ElevatedButton(
-                                      onPressed: () => Navigator.pop(ctx, true),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.red.shade600,
-                                        foregroundColor: Colors.white,
+                          onTap: widget.chat.isArchived
+                              ? null
+                              : () async {
+                                  // 1. Tampilkan Dialog Konfirmasi (2 Langkah)
+                                  final confirm = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) {
+                                      final isDarkDialog =
+                                          Theme.of(ctx).brightness ==
+                                          Brightness.dark;
+                                      return AlertDialog(
+                                        backgroundColor: isDarkDialog
+                                            ? const Color(0xFF1F2C34)
+                                            : Colors.white,
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(
-                                            8,
+                                            12,
                                           ),
                                         ),
-                                        elevation: 0,
-                                      ),
-                                      child: const Text(
-                                        'Oke',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            );
-
-                            // Jika user klik Batal atau menutup dialog, jangan lanjutkan
-                            if (confirm != true) return;
-
-                            // 2. Eksekusi Hapus Agent
-                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                            final chatProvider = Provider.of<ChatProvider>(
-                              context,
-                              listen: false,
-                            );
-                            final success = await chatProvider.removeAgent(
-                              widget.chat.id,
-                            );
-
-                            // 3. Tampilkan Notifikasi Melayang (Floating, Berwarna Jelas & Tidak Mentok di Bawah)
-                            if (success && mounted) {
-                              setState(() {
-                                _currentAgentName = '';
-                                _agentEmail = '';
-                              });
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: const Row(
-                                    children: [
-                                      Icon(
-                                        Icons.check_circle,
-                                        color: Colors.white,
-                                        size: 20,
-                                      ),
-                                      SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          'Successfully removed agent',
+                                        title: Text(
+                                          'Hapus Human Agent',
                                           style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w600,
+                                            color: isDarkDialog
+                                                ? Colors.white
+                                                : Colors.black87,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 18,
+                                          ),
+                                        ),
+                                        content: Text(
+                                          'Apakah Anda yakin ingin menghapus ${_currentAgentName.isNotEmpty ? _currentAgentName : "agen"} dari percakapan ini?',
+                                          style: TextStyle(
+                                            color: isDarkDialog
+                                                ? Colors.grey.shade300
+                                                : Colors.black87,
                                             fontSize: 14,
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  backgroundColor: const Color(
-                                    0xFF2E7D32,
-                                  ), // Hijau solid
-                                  behavior: SnackBarBehavior.floating,
-                                  margin: const EdgeInsets.only(
-                                    bottom: 40,
-                                    left: 20,
-                                    right: 20,
-                                  ), // Melayang elegan di atas bawah layar
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  elevation: 6,
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                            } else if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: const Row(
-                                    children: [
-                                      Icon(
-                                        Icons.error_outline,
-                                        color: Colors.white,
-                                        size: 20,
-                                      ),
-                                      SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          'Failed to remove agent',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 14,
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, false),
+                                            child: Text(
+                                              'Batal',
+                                              style: TextStyle(
+                                                color: isDarkDialog
+                                                    ? Colors.grey.shade400
+                                                    : Colors.grey.shade600,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, true),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  Colors.red.shade600,
+                                              foregroundColor: Colors.white,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              elevation: 0,
+                                            ),
+                                            child: const Text(
+                                              'Oke',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  );
+
+                                  // Jika user klik Batal atau menutup dialog, jangan lanjutkan
+                                  if (confirm != true) return;
+
+                                  // 2. Eksekusi Hapus Agent
+                                  ScaffoldMessenger.of(
+                                    context,
+                                  ).hideCurrentSnackBar();
+                                  final chatProvider =
+                                      Provider.of<ChatProvider>(
+                                        context,
+                                        listen: false,
+                                      );
+                                  final success = await chatProvider
+                                      .removeAgent(widget.chat.id);
+
+                                  // 3. Tampilkan Notifikasi Melayang (Floating, Berwarna Jelas & Tidak Mentok di Bawah)
+                                  if (success && mounted) {
+                                    setState(() {
+                                      _currentAgentName = '';
+                                      _agentEmail = '';
+                                    });
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: const Row(
+                                          children: [
+                                            Icon(
+                                              Icons.check_circle,
+                                              color: Colors.white,
+                                              size: 20,
+                                            ),
+                                            SizedBox(width: 10),
+                                            Expanded(
+                                              child: Text(
+                                                'Successfully removed agent',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        backgroundColor: const Color(
+                                          0xFF2E7D32,
+                                        ), // Hijau solid
+                                        behavior: SnackBarBehavior.floating,
+                                        margin: const EdgeInsets.only(
+                                          bottom: 40,
+                                          left: 20,
+                                          right: 20,
+                                        ), // Melayang elegan di atas bawah layar
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
                                           ),
                                         ),
+                                        elevation: 6,
+                                        duration: const Duration(seconds: 2),
                                       ),
-                                    ],
-                                  ),
-                                  backgroundColor:
-                                      Colors.red.shade600, // Merah solid
-                                  behavior: SnackBarBehavior.floating,
-                                  margin: const EdgeInsets.only(
-                                    bottom: 40,
-                                    left: 20,
-                                    right: 20,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  elevation: 6,
-                                  duration: const Duration(seconds: 3),
-                                ),
-                              );
-                            }
-                          },
+                                    );
+                                  } else if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: const Row(
+                                          children: [
+                                            Icon(
+                                              Icons.error_outline,
+                                              color: Colors.white,
+                                              size: 20,
+                                            ),
+                                            SizedBox(width: 10),
+                                            Expanded(
+                                              child: Text(
+                                                'Failed to remove agent',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        backgroundColor:
+                                            Colors.red.shade600, // Merah solid
+                                        behavior: SnackBarBehavior.floating,
+                                        margin: const EdgeInsets.only(
+                                          bottom: 40,
+                                          left: 20,
+                                          right: 20,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        elevation: 6,
+                                        duration: const Duration(seconds: 3),
+                                      ),
+                                    );
+                                  }
+                                },
                           borderRadius: BorderRadius.circular(20),
                           child: Padding(
                             padding: const EdgeInsets.all(8.0),
@@ -3658,7 +3819,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                     )
                   else
                     InkWell(
-                      onTap: _showAgentDialog,
+                      onTap: widget.chat.isArchived ? null : _showAgentDialog,
                       child: _buildPlaceholderValue(
                         isDark: isDark,
                         text: 'Not Set',
@@ -4201,7 +4362,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                                     SizedBox(width: 10),
                                     Expanded(
                                       child: Text(
-                                        'Human agent sudah ada di percakapan tsb',
+                                        'This agent is already added to this conversation',
                                         style: TextStyle(
                                           color: Colors.white,
                                           fontWeight: FontWeight.w600,

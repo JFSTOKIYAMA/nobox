@@ -12,12 +12,14 @@ class AddAgentDialog extends StatefulWidget {
   final String chatId;
   final String contactId;
   final String chId;
+  final String? currentAgentName; // Tambahan untuk deteksi instan dari AppBar
 
   const AddAgentDialog({
     super.key,
     required this.chatId,
     required this.contactId,
     required this.chId,
+    this.currentAgentName,
   });
 
   @override
@@ -81,12 +83,35 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
                 'Unknown Agent')
             .toString()
             .trim();
+    final displayName =
+        (agent['DisplayName'] ?? agent['FullName'] ?? agent['Name'] ?? '')
+            .toString()
+            .trim();
+    final email = (agent['Email'] ?? agent['Username'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
     final id = agent['Id']?.toString() ?? agent['UserId']?.toString() ?? '';
 
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
 
     // 1. DETEKSI APAKAH AGENT INI SUDAH ADA DI PERCAKAPAN
-    if (chatProvider.isAgentAlreadyAssigned(widget.chatId, name)) {
+    final bool isAlreadyAssigned =
+        chatProvider.isAgentAlreadyAssigned(
+          widget.chatId,
+          name,
+          agentId: id,
+          displayName: displayName,
+          email: email,
+        ) ||
+        (widget.currentAgentName != null &&
+            widget.currentAgentName!.isNotEmpty &&
+            (widget.currentAgentName!.toLowerCase().trim() ==
+                    name.toLowerCase() ||
+                widget.currentAgentName!.toLowerCase().trim() ==
+                    displayName.toLowerCase()));
+
+    if (isAlreadyAssigned) {
       Navigator.pop(context); // Tutup dialog AddAgentDialog
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -97,7 +122,7 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Human agent sudah ada di percakapan tsb',
+                  'This agent is already added to this conversation',
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
@@ -164,8 +189,9 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
   @override
   Widget build(BuildContext context) {
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Dialog(
-      backgroundColor: Colors.white,
+      backgroundColor: isDark ? const Color(0xFF1F2C34) : Colors.white,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       clipBehavior: Clip.antiAlias,
@@ -215,23 +241,37 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
               child: TextField(
                 controller: _searchController,
                 onChanged: _onSearchChanged,
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black87,
+                  fontSize: 15,
+                ),
                 decoration: InputDecoration(
                   hintText: 'Search agents...',
-                  hintStyle: TextStyle(color: Colors.grey[400], fontSize: 15),
-                  prefixIcon: Icon(Icons.search, color: Colors.grey[500]),
+                  hintStyle: TextStyle(
+                    color: isDark ? Colors.grey.shade500 : Colors.grey[400],
+                    fontSize: 15,
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    color: isDark ? Colors.grey.shade400 : Colors.grey[500],
+                  ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 12,
                   ),
                   filled: true,
-                  fillColor: Colors.white,
+                  fillColor: isDark ? const Color(0xFF152026) : Colors.white,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: Colors.grey[300]!),
+                    borderSide: BorderSide(
+                      color: isDark ? Colors.grey.shade700 : Colors.grey[300]!,
+                    ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: Colors.grey[300]!),
+                    borderSide: BorderSide(
+                      color: isDark ? Colors.grey.shade700 : Colors.grey[300]!,
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -254,7 +294,9 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
                           child: Text(
                             'No agents found',
                             style: TextStyle(
-                              color: Colors.grey[500],
+                              color: isDark
+                                  ? Colors.grey.shade400
+                                  : Colors.grey[500],
                               fontSize: 16,
                             ),
                           ),
@@ -264,7 +306,12 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
                         shrinkWrap: true,
                         padding: const EdgeInsets.only(bottom: 16),
                         itemCount: _filteredAgents.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        separatorBuilder: (_, __) => Divider(
+                          height: 1,
+                          color: isDark
+                              ? Colors.grey.shade800
+                              : Colors.grey.shade200,
+                        ),
                         itemBuilder: (context, index) {
                           final agent = _filteredAgents[index];
                           final name =
@@ -292,11 +339,15 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
                                 children: [
                                   CircleAvatar(
                                     radius: 22,
-                                    backgroundColor: const Color(0xFFE5F0FF),
+                                    backgroundColor: isDark
+                                        ? const Color(0xFF26384A)
+                                        : const Color(0xFFE5F0FF),
                                     child: Text(
                                       initial,
-                                      style: const TextStyle(
-                                        color: Color(0xFF3B82F6),
+                                      style: TextStyle(
+                                        color: isDark
+                                            ? const Color(0xFF60A5FA)
+                                            : const Color(0xFF3B82F6),
                                         fontWeight: FontWeight.bold,
                                         fontSize: 18,
                                       ),
@@ -313,7 +364,10 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
                                             Flexible(
                                               child: Text(
                                                 name,
-                                                style: const TextStyle(
+                                                style: TextStyle(
+                                                  color: isDark
+                                                      ? Colors.white
+                                                      : Colors.black87,
                                                   fontWeight: FontWeight.w600,
                                                   fontSize: 16,
                                                 ),
@@ -355,14 +409,18 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
                                               Icon(
                                                 Icons.mail_outline,
                                                 size: 14,
-                                                color: Colors.grey[500],
+                                                color: isDark
+                                                    ? Colors.grey.shade500
+                                                    : Colors.grey[500],
                                               ),
                                               const SizedBox(width: 4),
                                               Expanded(
                                                 child: Text(
                                                   email,
                                                   style: TextStyle(
-                                                    color: Colors.grey[600],
+                                                    color: isDark
+                                                        ? Colors.grey.shade400
+                                                        : Colors.grey[600],
                                                     fontSize: 13,
                                                   ),
                                                   maxLines: 1,
@@ -394,14 +452,21 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
             // Footer
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              color: const Color(0xFFF9FAFB), // light grey
+              color: isDark ? const Color(0xFF152026) : const Color(0xFFF9FAFB),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline, size: 16, color: Colors.grey[500]),
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: isDark ? Colors.grey.shade400 : Colors.grey[500],
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     '${_filteredAgents.length} agent${_filteredAgents.length == 1 ? '' : 's'} available',
-                    style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                    style: TextStyle(
+                      color: isDark ? Colors.grey.shade400 : Colors.grey[600],
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),

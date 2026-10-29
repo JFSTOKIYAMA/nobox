@@ -13,6 +13,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 import '../../../core/services/api_client.dart';
+import '../../../core/app_config.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:latlong2/latlong.dart';
@@ -3803,6 +3804,69 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   //          langsung muncul di layar sebelum response server), menangani
   //          status terkirim/pending, serta membersihkan input bar.]
   // =====================================================================
+  // [FITUR: Auto Assign Human Agent]
+  // [FUNGSI: Saat agen membalas percakapan yang masih Unassigned, otomatis
+  //          ubah statusnya menjadi Assigned dan catat user yang sedang login
+  //          sebagai penanggung jawab obrolan.]
+  // =====================================================================
+  Future<void> _autoAssignAgentIfUnassigned() async {
+    // Hanya berjalan jika status percakapan saat ini adalah Unassigned
+    // (atau St == 1 / agentName kosong)
+    final isUnassigned =
+        chat.status.toLowerCase() == 'unassigned' ||
+        chat.status == '1' ||
+        chat.agentName.trim().isEmpty;
+    if (!isUnassigned) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userDataJson = prefs.getString(AppConfig.userDataKey);
+      String agentId = '1';
+      String agentName = _currentUserEmail.isNotEmpty
+          ? _currentUserEmail
+          : 'Agent';
+
+      if (userDataJson != null) {
+        final userData = jsonDecode(userDataJson);
+        agentId =
+            userData['UserId']?.toString() ??
+            userData['Id']?.toString() ??
+            agentId;
+        agentName =
+            userData['DisplayName']?.toString() ??
+            userData['Nm']?.toString() ??
+            userData['Name']?.toString() ??
+            agentName;
+      }
+
+      // 1. Optimistic update state lokal halaman detail
+      if (mounted) {
+        setState(() {
+          chat = chat.copyWith(status: 'Assigned', agentName: agentName);
+        });
+      }
+
+      // 2. Perbarui state di ChatProvider
+      final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+      chatProvider.updateChatStatus(chat.id, 'Assigned', agentName: agentName);
+
+      // 3. Panggil API penugasan agen ke server NoBox
+      await chatProvider.assignAgent(
+        chat.id,
+        agentId,
+        agentName,
+        chId: chat.chId,
+        ctId: chat.contactId,
+      );
+      debugPrint(
+        '✅ [AutoAssign] Room ${chat.id} automatically assigned to $agentName (ID: $agentId)',
+      );
+    } catch (e) {
+      debugPrint('❌ [AutoAssign] Error auto assigning agent: $e');
+    }
+  }
+
+  // =====================================================================
   void _sendMessage() async {
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
     final isArchived = chat.isArchived || chatProvider.isRoomArchived(chat.id);
@@ -3811,6 +3875,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
     final content = _messageController.text.trim();
     if (content.isEmpty) return;
+
+    // Auto assign human agent bila percakapan masih Unassigned.
+    await _autoAssignAgentIfUnassigned();
 
     setState(() {
       _isSending = true;
@@ -4082,6 +4149,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     FocusManager.instance.primaryFocus?.unfocus();
     _focusNode.unfocus();
     if (confirmed != true) return;
+
+    // Auto assign human agent bila percakapan masih Unassigned.
+    await _autoAssignAgentIfUnassigned();
 
     final now = DateTime.now();
     final timeString = _formatFullTime(now);
@@ -4817,6 +4887,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     _focusNode.unfocus();
     if (confirmed != true) return;
 
+    // Auto assign human agent bila percakapan masih Unassigned.
+    await _autoAssignAgentIfUnassigned();
+
     final now = DateTime.now();
     final timeString = _formatFullTime(now);
 
@@ -5005,6 +5078,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   // FUNGSI: Mengunggah file audio yang telah direkam ke server dan menambahkannya ke daftar pesan sebagai lampiran suara.
   Future<void> _sendVoiceNote(String path, int duration) async {
     try {
+      // Auto assign human agent bila percakapan masih Unassigned.
+      await _autoAssignAgentIfUnassigned();
+
       final now = DateTime.now();
       final timeString = _formatFullTime(now);
 
@@ -5880,6 +5956,12 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               borderRadius: BorderRadius.circular(16),
             ),
             onSelected: (value) {
+              if (chat.isArchived &&
+                  (value == 'add_agent' ||
+                      value == 'mark_resolved' ||
+                      value == 'archive_conversation')) {
+                return; // Guard: Jangan izinkan jika percakapan sudah diarsip
+              }
               if (value == 'add_agent') {
                 _showAddAgentDialog();
               } else if (value == 'mark_resolved') {
@@ -5891,57 +5973,62 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               }
             },
             itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'add_agent',
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.person_add_alt,
-                      size: 24,
-                      color: isDark ? Colors.white70 : Colors.black87,
-                    ),
-                    const SizedBox(width: 16),
-                    const Text(
-                      'Add Human Agent',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                  ],
+              // HANYA MUNCUL JIKA CHAT TIDAK SEDANG DIARSIP
+              if (!chat.isArchived)
+                PopupMenuItem(
+                  value: 'add_agent',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.person_add_alt,
+                        size: 24,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                      const SizedBox(width: 16),
+                      const Text(
+                        'Add Human Agent',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              PopupMenuItem(
-                value: 'mark_resolved',
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.check_circle_outline,
-                      size: 24,
-                      color: isDark ? Colors.white70 : Colors.black87,
-                    ),
-                    const SizedBox(width: 16),
-                    const Text(
-                      'Mark as Resolved',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                  ],
+              // HANYA MUNCUL JIKA CHAT TIDAK SEDANG DIARSIP
+              if (!chat.isArchived)
+                PopupMenuItem(
+                  value: 'mark_resolved',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline,
+                        size: 24,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                      const SizedBox(width: 16),
+                      const Text(
+                        'Mark as Resolved',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              PopupMenuItem(
-                value: 'archive_conversation',
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.archive_outlined,
-                      size: 24,
-                      color: isDark ? Colors.white70 : Colors.black87,
-                    ),
-                    const SizedBox(width: 16),
-                    const Text(
-                      'Archived Conversation',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                  ],
+              if (!chat.isArchived)
+                PopupMenuItem(
+                  value: 'archive_conversation',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.archive_outlined,
+                        size: 24,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                      const SizedBox(width: 16),
+                      const Text(
+                        'Archived Conversation',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
               const PopupMenuItem(
                 value: 'help',
                 child: Row(
@@ -6103,6 +6190,12 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             borderRadius: BorderRadius.circular(16),
           ),
           onSelected: (value) {
+            if (chat.isArchived &&
+                (value == 'add_agent' ||
+                    value == 'mark_resolved' ||
+                    value == 'archive_conversation')) {
+              return; // Guard: Jangan izinkan jika percakapan sudah diarsip
+            }
             if (value == 'add_agent') {
               _showAddAgentDialog();
             } else if (value == 'mark_resolved') {
@@ -6114,54 +6207,62 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             }
           },
           itemBuilder: (context) => [
-            PopupMenuItem(
-              value: 'add_agent',
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.person_add_alt,
-                    size: 24,
-                    color: isDark ? Colors.white70 : Colors.black87,
-                  ),
-                  const SizedBox(width: 16),
-                  const Text('Add Human Agent', style: TextStyle(fontSize: 16)),
-                ],
+            // HANYA MUNCUL JIKA CHAT TIDAK SEDANG DIARSIP
+            if (!chat.isArchived)
+              PopupMenuItem(
+                value: 'add_agent',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.person_add_alt,
+                      size: 24,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                    ),
+                    const SizedBox(width: 16),
+                    const Text(
+                      'Add Human Agent',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            PopupMenuItem(
-              value: 'mark_resolved',
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.check_circle_outline,
-                    size: 24,
-                    color: isDark ? Colors.white70 : Colors.black87,
-                  ),
-                  const SizedBox(width: 16),
-                  const Text(
-                    'Mark as Resolved',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ],
+            // HANYA MUNCUL JIKA CHAT TIDAK SEDANG DIARSIP
+            if (!chat.isArchived)
+              PopupMenuItem(
+                value: 'mark_resolved',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline,
+                      size: 24,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                    ),
+                    const SizedBox(width: 16),
+                    const Text(
+                      'Mark as Resolved',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            PopupMenuItem(
-              value: 'archive_conversation',
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.archive_outlined,
-                    size: 24,
-                    color: isDark ? Colors.white70 : Colors.black87,
-                  ),
-                  const SizedBox(width: 16),
-                  const Text(
-                    'Archived Conversation',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ],
+            if (!chat.isArchived)
+              PopupMenuItem(
+                value: 'archive_conversation',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.archive_outlined,
+                      size: 24,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                    ),
+                    const SizedBox(width: 16),
+                    const Text(
+                      'Archived Conversation',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                  ],
+                ),
               ),
-            ),
             const PopupMenuItem(
               value: 'help',
               child: Row(
@@ -6417,6 +6518,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         chatId: chat.id,
         contactId: chat.contactId,
         chId: chat.chId,
+        currentAgentName: chat.agentName,
       ),
     );
   }

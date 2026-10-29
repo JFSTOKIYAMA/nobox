@@ -34,4 +34,9 @@ class FilterApiService {
   Future<ApiResponse<List<Map<String, dynamic>>>> getAccounts() {
     return _chatService.getAccounts();
   }
+
+  /// Membuat Master Funnel baru
+  Future<ApiResponse<Map<String, dynamic>>> createFunnel(String funnelName) {
+    return _chatService.createFunnel(funnelName);
+  }
 }

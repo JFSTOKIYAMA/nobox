@@ -35,7 +35,8 @@ class VoiceRecordingBottomSheet extends StatefulWidget {
   });
 
   @override
-  State<VoiceRecordingBottomSheet> createState() => _VoiceRecordingBottomSheetState();
+  State<VoiceRecordingBottomSheet> createState() =>
+      _VoiceRecordingBottomSheetState();
 }
 
 class _VoiceRecordingBottomSheetState extends State<VoiceRecordingBottomSheet>
@@ -66,10 +67,12 @@ class _VoiceRecordingBottomSheetState extends State<VoiceRecordingBottomSheet>
     _isPaused = widget.isPaused;
 
     _pulseController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1000))
-      ..repeat(reverse: true);
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
     _pulseAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
-        CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut));
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
 
     // Timer for UI sync
     Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -167,38 +170,46 @@ class _VoiceRecordingBottomSheetState extends State<VoiceRecordingBottomSheet>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1F2C34) : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildHeader(),
+          _buildHeader(isDark),
           const SizedBox(height: 32),
-          if (!_isReady) _buildRecordingState() else _buildReadyState(),
+          if (!_isReady)
+            _buildRecordingState(isDark)
+          else
+            _buildReadyState(isDark),
           const SizedBox(height: 32),
         ],
       ),
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(bool isDark) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           _isReady ? 'Voice Note Ready' : 'Recording Voice Note',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
-            color: Colors.black87,
+            color: isDark ? Colors.white : Colors.black87,
           ),
         ),
         IconButton(
-          icon: const Icon(Icons.close, color: Colors.grey),
+          icon: Icon(
+            Icons.close,
+            color: isDark ? Colors.grey.shade400 : Colors.grey,
+          ),
           onPressed: () {
             widget.onDelete();
             Navigator.pop(context);
@@ -209,12 +220,14 @@ class _VoiceRecordingBottomSheetState extends State<VoiceRecordingBottomSheet>
   }
 
   // [ACTION: RECORD_VOICE] - Menampilkan animasi dan timer perekaman
-  Widget _buildRecordingState() {
+  Widget _buildRecordingState(bool isDark) {
     return Column(
       children: [
-        // Pulse Mic
+        // Pulse Mic Container (sudah memiliki background merah transparan yang kontras)
         ScaleTransition(
-          scale: _isPaused ? const AlwaysStoppedAnimation(1.0) : _pulseAnimation,
+          scale: _isPaused
+              ? const AlwaysStoppedAnimation(1.0)
+              : _pulseAnimation,
           child: Container(
             width: 80,
             height: 80,
@@ -238,10 +251,10 @@ class _VoiceRecordingBottomSheetState extends State<VoiceRecordingBottomSheet>
         const SizedBox(height: 16),
         Text(
           _formatDuration(_seconds),
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.w600,
-            color: Colors.black,
+            color: isDark ? Colors.white : Colors.black,
           ),
         ),
         const SizedBox(height: 32),
@@ -271,7 +284,7 @@ class _VoiceRecordingBottomSheetState extends State<VoiceRecordingBottomSheet>
             ),
             _buildActionButton(
               icon: Icons.stop,
-              color: Colors.blue,
+              color: isDark ? const Color(0xFF60A5FA) : Colors.blue,
               onPressed: _handleStop,
             ),
           ],
@@ -280,16 +293,22 @@ class _VoiceRecordingBottomSheetState extends State<VoiceRecordingBottomSheet>
     );
   }
 
-  Widget _buildReadyState() {
+  Widget _buildReadyState(bool isDark) {
     return Column(
       children: [
-        // Audio Player
+        // Audio Player Card
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.blue.withOpacity(0.05),
+            color: isDark
+                ? Colors.white.withOpacity(0.06)
+                : Colors.blue.withOpacity(0.05),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.blue.withOpacity(0.1)),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withOpacity(0.12)
+                  : Colors.blue.withOpacity(0.1),
+            ),
           ),
           child: Column(
             children: [
@@ -297,22 +316,46 @@ class _VoiceRecordingBottomSheetState extends State<VoiceRecordingBottomSheet>
                 children: [
                   IconButton(
                     iconSize: 32,
-                    icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
-                    color: Colors.blue,
+                    icon: Icon(
+                      _isPlaying
+                          ? Icons.pause_circle_filled
+                          : Icons.play_circle_filled,
+                    ),
+                    color: isDark ? const Color(0xFF60A5FA) : Colors.blue,
                     onPressed: _handlePlayPause,
                   ),
                   Expanded(
                     child: Slider(
-                      value: _position.inMilliseconds.toDouble().clamp(0, _duration.inMilliseconds.toDouble()),
+                      activeColor: isDark
+                          ? const Color(0xFF60A5FA)
+                          : Colors.blue,
+                      inactiveColor: isDark
+                          ? Colors.grey.shade700
+                          : Colors.blue.shade100,
+                      value: _position.inMilliseconds.toDouble().clamp(
+                        0,
+                        _duration.inMilliseconds.toDouble(),
+                      ),
                       max: _duration.inMilliseconds.toDouble(),
                       onChanged: (v) async {
-                        await widget.audioPlayer.seek(Duration(milliseconds: v.toInt()));
+                        await widget.audioPlayer.seek(
+                          Duration(milliseconds: v.toInt()),
+                        );
                       },
                     ),
                   ),
                   Text(
-                    _formatDuration(((_seconds > 0 ? _seconds : _duration.inSeconds) - _position.inSeconds).clamp(0, 999)),
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                    _formatDuration(
+                      ((_seconds > 0 ? _seconds : _duration.inSeconds) -
+                              _position.inSeconds)
+                          .clamp(0, 999),
+                    ),
+                    style: TextStyle(
+                      color: isDark
+                          ? Colors.grey.shade400
+                          : Colors.grey.shade600,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -322,10 +365,10 @@ class _VoiceRecordingBottomSheetState extends State<VoiceRecordingBottomSheet>
         const SizedBox(height: 16),
         Text(
           _formatDuration(_seconds),
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w500,
-            color: Colors.grey,
+            color: isDark ? Colors.grey.shade400 : Colors.grey,
           ),
         ),
         const SizedBox(height: 32),
@@ -335,8 +378,12 @@ class _VoiceRecordingBottomSheetState extends State<VoiceRecordingBottomSheet>
               child: OutlinedButton(
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  side: const BorderSide(color: Colors.blue),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  side: BorderSide(
+                    color: isDark ? const Color(0xFF60A5FA) : Colors.blue,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 onPressed: () {
                   widget.onReRecord();
@@ -348,17 +395,25 @@ class _VoiceRecordingBottomSheetState extends State<VoiceRecordingBottomSheet>
                     _recordedPath = null;
                   });
                 },
-                child: const Text('Re-record', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                child: Text(
+                  'Re-record',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFF60A5FA) : Colors.blue,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 16),
             Expanded(
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
+                  backgroundColor: const Color(0xFF3B82F6),
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 onPressed: () {
                   if (_recordedPath != null) {
@@ -366,7 +421,13 @@ class _VoiceRecordingBottomSheetState extends State<VoiceRecordingBottomSheet>
                     Navigator.pop(context);
                   }
                 },
-                child: const Text('Send', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'Send',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
           ],
@@ -375,7 +436,11 @@ class _VoiceRecordingBottomSheetState extends State<VoiceRecordingBottomSheet>
     );
   }
 
-  Widget _buildActionButton({required IconData icon, required Color color, required VoidCallback onPressed}) {
+  Widget _buildActionButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
     return InkWell(
       onTap: onPressed,
       borderRadius: BorderRadius.circular(30),

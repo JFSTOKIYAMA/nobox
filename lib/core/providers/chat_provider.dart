@@ -30,6 +30,8 @@ class ChatProvider with ChangeNotifier {
     _loadPersistedState();
   }
   bool _isLoading = false;
+  bool _isLoadingArchived = false;
+  bool get isLoadingArchived => _isLoadingArchived;
   String? _error;
   // Error khusus dari fetchChats() (memuat daftar percakapan).
   // Dipisah dari _error karena _error juga dipakai aksi lain (arsip, tag, dll).
@@ -87,6 +89,9 @@ class ChatProvider with ChangeNotifier {
   // Persisted local state
   Set<String> _pinnedIds = {};
   Set<String> _archivedIds = {};
+  // Peta waktu pengarsipan lokal (RoomId → DateTime) untuk mengurutkan daftar
+  // arsip berdasarkan waktu pengarsipan terakhir (DESC).
+  final Map<String, DateTime> _archivedTimestamps = {};
   Set<String> _readIds = {};
   Set<String> _starredMessageIds = {};
   final List<Map<String, dynamic>> _starredMessages = [];
@@ -121,6 +126,7 @@ class ChatProvider with ChangeNotifier {
 
   static const String _pinnedKey = 'pinned_chats';
   static const String _archivedKey = 'archived_chats';
+  static const String _cachedArchivedListKey = 'cached_archived_list';
   static const String _readKey = 'read_chats';
   static const String _starredKey = 'starred_messages';
   static const String _starredDataKey = 'starred_messages_data';
@@ -220,6 +226,10 @@ class ChatProvider with ChangeNotifier {
 
   ChatModel _applyAgentOverride(ChatModel chat) {
     var updatedChat = chat;
+    // FIX: Jangan pernah override status percakapan yang sudah Resolved atau Archived!
+    if (chat.status.toLowerCase() == 'resolved' || chat.isArchived) {
+      return updatedChat;
+    }
     final persistedAgent = _savedAgentNames[chat.id];
     if (persistedAgent != null) {
       if (persistedAgent.isNotEmpty && persistedAgent != 'Unassigned') {
@@ -2792,6 +2802,41 @@ class ChatProvider with ChangeNotifier {
         _archivedIds = Set<String>.from(jsonDecode(archivedJson));
       }
 
+      // Muat cache daftar arsip agar halaman arsip langsung tampil seketika
+      // saat aplikasi baru dibuka, tanpa menunggu fetch dari server.
+      final cachedJson = prefs.getString(_cachedArchivedListKey);
+      if (cachedJson != null) {
+        try {
+          final decoded = jsonDecode(cachedJson) as List<dynamic>;
+          for (final item in decoded) {
+            final m = item as Map<String, dynamic>;
+            final id = m['id']?.toString() ?? '';
+            if (id.isNotEmpty && !_chats.any((c) => c.id == id)) {
+              _chats.add(ChatModel(
+                id: id,
+                sender: m['sender']?.toString() ?? 'Unknown',
+                lastMessage: m['lastMessage']?.toString() ?? '',
+                time: m['time']?.toString() ?? '',
+                unreadCount: m['unreadCount'] is int ? m['unreadCount'] : 0,
+                status: m['status']?.toString() ?? 'Archived',
+                agentName: m['agentName']?.toString() ?? '',
+                isArchived: true,
+                avatarUrl: m['avatarUrl']?.toString(),
+                channelName: m['channelName']?.toString() ?? '',
+                channelType: m['channelType']?.toString() ?? '',
+                chId: m['chId']?.toString() ?? '',
+                contactId: m['contactId']?.toString() ?? '',
+                accountId: m['accountId']?.toString() ?? '',
+              ));
+              // Pastikan id juga terdaftar sebagai arsip agar status konsisten.
+              _archivedIds.add(id);
+              final numId = id.replaceAll(RegExp(r'[^0-9]'), '');
+              if (numId.isNotEmpty) _archivedIds.add(numId);
+            }
+          }
+        } catch (_) {}
+      }
+
       final readJson = prefs.getString(_readKey);
       if (readJson != null) {
         _readIds = Set<String>.from(jsonDecode(readJson));
@@ -2964,6 +3009,35 @@ class ChatProvider with ChangeNotifier {
     });
   }
 
+  /// Simpan daftar percakapan arsip ke cache lokal (SharedPreferences) agar
+  /// pembukaan halaman arsip berikutnya langsung tampil tanpa menunggu server.
+  Future<void> _saveCachedArchivedList() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = archivedChats
+          .map(
+            (c) => {
+              'id': c.id,
+              'sender': c.sender,
+              'lastMessage': c.lastMessage,
+              'time': c.time,
+              'unreadCount': c.unreadCount,
+              'status': c.status,
+              'agentName': c.agentName,
+              'isArchived': true,
+              'avatarUrl': c.avatarUrl,
+              'channelName': c.channelName,
+              'channelType': c.channelType,
+              'chId': c.chId,
+              'contactId': c.contactId,
+              'accountId': c.accountId,
+            },
+          )
+          .toList();
+      await prefs.setString(_cachedArchivedListKey, jsonEncode(list));
+    } catch (_) {}
+  }
+
   void _saveReadState() {
     _saveReadDebounce?.cancel();
     _saveReadDebounce = Timer(const Duration(milliseconds: 400), () async {
@@ -3067,25 +3141,62 @@ class ChatProvider with ChangeNotifier {
     return _savedAgentNames[roomId];
   }
 
-  /// Cek apakah agent dengan nama ini sudah ditugaskan ke obrolan terkait
-  bool isAgentAlreadyAssigned(String contactId, String agentName) {
-    final targetName = agentName.toLowerCase().trim();
-    if (targetName.isEmpty) return false;
+  /// Cek apakah agent dengan nama/ID ini sudah ditugaskan ke obrolan terkait
+  bool isAgentAlreadyAssigned(
+    String contactId,
+    String agentName, {
+    String? agentId,
+    String? displayName,
+    String? email,
+  }) {
+    final searchNames = {
+      agentName.toLowerCase().trim(),
+      if (displayName != null && displayName.isNotEmpty)
+        displayName.toLowerCase().trim(),
+    }..removeWhere((e) => e.isEmpty);
 
-    // 1. Cek dari persistent saved agent name
+    if (searchNames.isEmpty && (agentId == null || agentId.isEmpty))
+      return false;
+
+    // 1. Cek dari persistent saved agent name di provider
     final saved = _savedAgentNames[contactId]?.toLowerCase().trim();
-    if (saved != null && saved.isNotEmpty && saved == targetName) {
-      return true;
+    if (saved != null && saved.isNotEmpty) {
+      if (searchNames.contains(saved)) return true;
     }
 
-    // 2. Cek dari daftar obrolan aktif
-    for (final chat in _chats) {
+    // 2. Cek dari daftar obrolan aktif (_chats & _allMasterChats)
+    final allChatsToCheck = {..._chats, ..._allMasterChats};
+    for (final chat in allChatsToCheck) {
       if (chat.id == contactId && chat.agentName.isNotEmpty) {
-        if (chat.agentName.toLowerCase().trim() == targetName) {
-          return true;
+        final currentName = chat.agentName.toLowerCase().trim();
+        if (searchNames.contains(currentName)) return true;
+      }
+    }
+
+    // 3. Cek dari cache DetailRoom jika ada (RoomAgents list dari server)
+    if (_detailRoomCache.containsKey(contactId)) {
+      final roomData = _detailRoomCache[contactId];
+      if (roomData != null && roomData['RoomAgents'] is List) {
+        for (final item in (roomData['RoomAgents'] as List)) {
+          if (item is Map) {
+            final uId = item['UserId']?.toString() ?? item['Id']?.toString();
+            final dName = item['DisplayName']?.toString().toLowerCase().trim();
+            final uName = item['Name']?.toString().toLowerCase().trim();
+            final uEmail = item['UserEmail']?.toString().toLowerCase().trim();
+
+            if (agentId != null && agentId.isNotEmpty && uId == agentId)
+              return true;
+            if (dName != null && searchNames.contains(dName)) return true;
+            if (uName != null && searchNames.contains(uName)) return true;
+            if (email != null &&
+                email.isNotEmpty &&
+                uEmail == email.toLowerCase().trim())
+              return true;
+          }
         }
       }
     }
+
     return false;
   }
 
@@ -3528,9 +3639,25 @@ class ChatProvider with ChangeNotifier {
   }
 
   List<ChatModel> get archivedChats {
-    return _chats
+    final list = _chats
         .where((chat) => chat.isArchived || isRoomArchived(chat.id))
         .toList();
+
+    list.sort((a, b) {
+      final timeA =
+          _archivedTimestamps[a.id] ??
+          _archivedTimestamps[a.id.replaceAll(RegExp(r'[^0-9]'), '')] ??
+          DateTime.tryParse(a.time) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final timeB =
+          _archivedTimestamps[b.id] ??
+          _archivedTimestamps[b.id.replaceAll(RegExp(r'[^0-9]'), '')] ??
+          DateTime.tryParse(b.time) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      return timeB.compareTo(timeA); // Terkini di paling atas (DESC)
+    });
+
+    return list;
   }
 
   void markAsRead(String chatId) {
@@ -3960,6 +4087,10 @@ class ChatProvider with ChangeNotifier {
       _archivedIds.addAll(idsToUpdate);
       _pinnedIds.remove(chatId);
       _savePinnedState();
+      // Rekam waktu arsip saat ini agar daftar arsip terurut DESC.
+      _archivedTimestamps[chatId] = DateTime.now();
+      final numId = chatId.replaceAll(RegExp(r'[^0-9]'), '');
+      if (numId.isNotEmpty) _archivedTimestamps[numId] = DateTime.now();
     } else {
       _archivedIds.removeAll(idsToUpdate);
     }
@@ -3991,7 +4122,14 @@ class ChatProvider with ChangeNotifier {
   }
 
   /// Sinkronisasi percakapan yang diarsipkan dari server dan gabungkan ke memori
-  Future<void> syncArchivedConversations() async {
+  Future<void> syncArchivedConversations({bool showLoading = true}) async {
+    if (_isLoadingArchived) return;
+
+    if (showLoading) {
+      _isLoadingArchived = true;
+      notifyListeners();
+    }
+
     try {
       final archivedResponse = await _chatService.getArchivedConversations();
       if (!archivedResponse.isError && archivedResponse.data != null) {
@@ -4024,11 +4162,17 @@ class ChatProvider with ChangeNotifier {
         }
         if (hasChanges) {
           _saveArchivedState(immediate: true);
+          _saveCachedArchivedList(); // Simpan ke cache lokal agar pembukaan berikutnya instan
           notifyListeners();
         }
       }
     } catch (e) {
-      debugPrint('ChatProvider: Failed to sync archived conversations: $e');
+      debugPrint('ChatProvider: Error syncing archived conversations: $e');
+    } finally {
+      if (showLoading) {
+        _isLoadingArchived = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -4421,6 +4565,27 @@ class ChatProvider with ChangeNotifier {
     if (targetId.isEmpty) return;
     final cleanNumeric = targetId.replaceAll(RegExp(r'[^0-9]'), '');
 
+    // Perbarui juga item di dalam _allMasterChats agar source of truth
+    // tetap sinkron saat berpindah-pindah tab filter.
+    final masterIndex = _allMasterChats.indexWhere((c) {
+      if (c.id == targetId) return true;
+      if (c.contactId == targetId) return true;
+      if (c.ctRealId == targetId) return true;
+      if (c.link == targetId) return true;
+      if (cleanNumeric.isNotEmpty &&
+          c.id.replaceAll(RegExp(r'[^0-9]'), '') == cleanNumeric) {
+        return true;
+      }
+      return false;
+    });
+
+    if (masterIndex != -1) {
+      _allMasterChats[masterIndex] = _allMasterChats[masterIndex].copyWith(
+        status: newStatus,
+        agentName: agentName ?? _allMasterChats[masterIndex].agentName,
+      );
+    }
+
     final index = _chats.indexWhere((c) {
       if (c.id == targetId) return true;
       if (c.contactId == targetId) return true;
@@ -4438,8 +4603,30 @@ class ChatProvider with ChangeNotifier {
         status: newStatus,
         agentName: agentName ?? _chats[index].agentName,
       );
-      notifyListeners();
     }
+
+    // Jika percakapan di-resolve, hapus entri saved agent names agar tidak
+    // di-override kembali menjadi Assigned oleh _applyAgentOverride.
+    if (newStatus == 'Resolved') {
+      _savedAgentNames.remove(targetId);
+      if (cleanNumeric.isNotEmpty) _savedAgentNames.remove(cleanNumeric);
+      _saveSavedAgentNames();
+    }
+
+    // Jika tab aktif adalah Unassigned/Assigned dan status baru Resolved,
+    // hapus item seketika agar langsung pindah tab dan tidak nyangkut.
+    if ((_activeFilter == 'Unassigned' || _activeFilter == 'Assigned') &&
+        newStatus == 'Resolved') {
+      _chats.removeWhere(
+        (c) =>
+            c.id == targetId ||
+            c.contactId == targetId ||
+            (cleanNumeric.isNotEmpty &&
+                c.id.replaceAll(RegExp(r'[^0-9]'), '') == cleanNumeric),
+      );
+    }
+
+    notifyListeners();
   }
 
   Future<bool> resolveChat(
@@ -4767,6 +4954,20 @@ class ChatProvider with ChangeNotifier {
     }
     _error = response.error;
     return null;
+  }
+
+  /// Tambahkan method helper untuk mendaftarkan funnel baru ke cache provider
+  void registerNewFunnel({required String id, required String name}) {
+    if (_cachedFunnels == null) {
+      _cachedFunnels = [];
+    }
+    final exists = _cachedFunnels!.any(
+      (f) => f['Id']?.toString() == id || f['Name'] == name,
+    );
+    if (!exists) {
+      _cachedFunnels!.add({'Id': id, 'Name': name, 'Nm': name});
+      notifyListeners();
+    }
   }
 
   Future<List<Map<String, dynamic>>?> getTags({

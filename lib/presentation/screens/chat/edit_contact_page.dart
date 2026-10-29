@@ -1460,6 +1460,24 @@ class _EditContactPageState extends State<EditContactPage> {
     final size = renderBox.size;
     final offset = renderBox.localToGlobal(Offset.zero);
 
+    final mediaQuery = MediaQuery.of(context);
+    final screenHeight = mediaQuery.size.height;
+    final bottomInset = mediaQuery.viewInsets.bottom;
+    final bottomPadding = mediaQuery.padding.bottom;
+
+    // Sisa ruang di bawah dan di atas
+    final spaceBelow =
+        screenHeight -
+        (offset.dy + size.height + 4) -
+        bottomInset -
+        bottomPadding;
+    final spaceAbove = offset.dy - mediaQuery.padding.top - 8;
+
+    // Jika ruang di bawah sempit (< 200px) dan ruang di atas lebih lega, buka dropdown ke atas
+    final bool showAbove = spaceBelow < 200 && spaceAbove > spaceBelow;
+    final double dynamicMaxHeight =
+        (showAbove ? spaceAbove - 20 : spaceBelow - 20).clamp(160.0, 300.0);
+
     _locationSearchController.clear();
     List<T> filteredItems = List.from(items);
     _activeLocationKey = anchorKey;
@@ -1477,7 +1495,8 @@ class _EditContactPageState extends State<EditContactPage> {
             ),
             Positioned(
               left: offset.dx,
-              top: offset.dy + size.height + 4,
+              top: showAbove ? null : (offset.dy + size.height + 4),
+              bottom: showAbove ? (screenHeight - offset.dy + 4) : null,
               width: size.width,
               child: Material(
                 elevation: 8,
@@ -1565,7 +1584,9 @@ class _EditContactPageState extends State<EditContactPage> {
                             ),
                           ),
                           ConstrainedBox(
-                            constraints: const BoxConstraints(maxHeight: 250),
+                            constraints: BoxConstraints(
+                              maxHeight: dynamicMaxHeight,
+                            ),
                             child: filteredItems.isEmpty
                                 ? Padding(
                                     padding: const EdgeInsets.all(16.0),
@@ -1638,7 +1659,10 @@ class _EditContactPageState extends State<EditContactPage> {
                                     ),
                                   )
                                 : ListView.builder(
-                                    padding: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.only(
+                                      top: 4,
+                                      bottom: 28,
+                                    ),
                                     shrinkWrap: true,
                                     itemCount: filteredItems.length,
                                     itemBuilder: (context, index) {
@@ -1982,6 +2006,7 @@ class _SearchableListState<T> extends State<_SearchableList<T>> {
                     )
                   : ListView.builder(
                       controller: scrollController,
+                      padding: const EdgeInsets.only(bottom: 32),
                       itemCount: _filteredItems.length,
                       itemBuilder: (context, index) {
                         final item = _filteredItems[index];

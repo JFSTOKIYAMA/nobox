@@ -2716,40 +2716,43 @@ class ChatService {
   /// Upload an image file without sending it as a message
   Future<ApiResponse<String>> uploadImage(File file) async {
     try {
-      final bytes = await file.readAsBytes();
-      final base64String = base64Encode(bytes);
       final fileName = file.path.split(Platform.pathSeparator).last;
-      final extension = fileName.contains('.')
-          ? fileName.split('.').last.toLowerCase()
-          : 'jpg';
-
       final mimeType = _getMimeType(fileName);
+      final mediaType = _parseMediaType(mimeType);
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(
+          file.path,
+          filename: fileName,
+          contentType: mediaType,
+        ),
+      });
+
       final uploadResponse = await _apiClient.post(
-        AppConfig.uploadBase64Endpoint,
-        data: {
-          'media': {
-            'filename': fileName,
-            'mimetype': mimeType,
-            'data': base64String,
-          },
-        },
+        'File/TemporaryUpload',
+        data: formData,
       );
 
       if (uploadResponse.statusCode == 200) {
         final responseData = uploadResponse.data;
-        String? uploadedUrl;
-        if (responseData is Map && responseData['Data'] != null) {
-          uploadedUrl =
-              responseData['Data']['Filename'] ?? responseData['Data']['url'];
-        } else if (responseData is String) {
-          uploadedUrl = responseData;
+        String? serverFileName;
+        if (responseData is Map) {
+          if (responseData['TemporaryFile'] != null) {
+            serverFileName = responseData['TemporaryFile'].toString();
+          } else if (responseData['Filename'] != null) {
+            serverFileName = responseData['Filename'].toString();
+          } else if (responseData['Data'] != null) {
+            final raw = responseData['Data'];
+            if (raw is Map) {
+              serverFileName = (raw['TemporaryFile'] ?? raw['Filename'])
+                  ?.toString();
+            }
+          }
         }
 
-        if (uploadedUrl != null) {
-          // Prepend base upload URL for relative paths
-          final fullUrl = !uploadedUrl.startsWith('http')
-              ? '${AppConfig.uploadUrl}$uploadedUrl'
-              : uploadedUrl;
+        if (serverFileName != null && serverFileName.isNotEmpty) {
+          final fullUrl = serverFileName.startsWith('http')
+              ? serverFileName
+              : '${AppConfig.uploadUrl}${serverFileName.replaceAll('\\', '/')}';
           return ApiResponse.success(fullUrl, 200);
         }
       }
@@ -3111,8 +3114,7 @@ class ChatService {
 
       debugPrint('UPDATE FORM RAW RESPONSE: ');
       final data = response.data;
-      if (response.statusCode == 200 &&
-          (data is Map && data['IsError'] != true)) {
+      if (response.statusCode == 200 || response.statusCode == 204) {
         debugPrint('✅ [Update Funnel] Successfully updated funnel');
         return ApiResponse.success(true, 200);
       }

@@ -5818,6 +5818,10 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       MaterialPageRoute(builder: (context) => ContactInfoPage(chat: chat)),
     );
     if (mounted) {
+      final cachedAvatar = _chatProvider?.getCachedAvatarUrl(chat.id);
+      if (cachedAvatar != null && cachedAvatar.isNotEmpty) {
+        chat = chat.copyWith(avatarUrl: cachedAvatar);
+      }
       setState(() {});
     }
   }
@@ -6422,35 +6426,43 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   // ─────────────────────────────────────────────
 
   void _showResolveConfirmation() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          backgroundColor: Colors.white,
+          backgroundColor: isDark ? const Color(0xFF1F2C34) : Colors.white,
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          title: const Text(
+          title: Text(
             'Mark as Resolved',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 20,
-              color: Colors.black,
+              color: isDark ? Colors.white : Colors.black,
             ),
           ),
-          content: const Text(
+          content: Text(
             'Are you sure you want to mark this conversation as resolved? You won\'t be able to send messages after this.',
-            style: TextStyle(fontSize: 15, color: Colors.black87, height: 1.4),
+            style: TextStyle(
+              fontSize: 15,
+              color: isDark ? Colors.white70 : Colors.black87,
+              height: 1.4,
+            ),
           ),
           actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text(
+              child: Text(
                 'Cancel',
                 style: TextStyle(
-                  color: Color(0xFF3B82F6),
+                  color: isDark
+                      ? const Color(0xFF60A5FA)
+                      : const Color(0xFF3B82F6),
                   fontWeight: FontWeight.w600,
                   fontSize: 15,
                 ),

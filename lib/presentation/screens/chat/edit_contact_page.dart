@@ -507,8 +507,13 @@ class _EditContactPageState extends State<EditContactPage> {
                   final imageUrl = await chatProvider.uploadImage(
                     _profileImage!,
                   );
-                  if (imageUrl != null) {
+                  if (imageUrl != null && imageUrl.isNotEmpty) {
                     contactData["Photo"] = imageUrl;
+                    contactData["CtImg"] = imageUrl;
+                    await chatProvider.saveCachedAvatarUrl(
+                      widget.chat.id,
+                      imageUrl,
+                    );
                   } else {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(

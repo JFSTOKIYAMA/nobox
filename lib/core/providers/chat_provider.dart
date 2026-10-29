@@ -147,6 +147,12 @@ class ChatProvider with ChangeNotifier {
   Map<String, bool> _savedBlockStates = {};
   // Map: roomId → URL avatar terbaru (diambil dari DetailRoom, untuk menggantikan URL stale dari list API)
   Map<String, String> _cachedAvatarUrls = {};
+  // Map: roomId → funnel name (optimistic local cache agar tidak tertimpa fetchChats)
+  Map<String, String> _savedContactFunnels = {};
+  // Map: roomId → list tag names (optimistic local cache agar tidak tertimpa fetchChats)
+  Map<String, List<String>> _savedContactTags = {};
+  // Map: roomId → notes (optimistic local cache agar tidak tertimpa fetchChats)
+  Map<String, String> _savedContactNotes = {};
 
   /// Mendapatkan status blokir yang akurat dan melindunginya dari nilai default keliru pada API NoBox untuk kontak baru
   bool resolveIsBlocked(String roomId, bool serverIsBlocked) {
@@ -689,7 +695,10 @@ class ChatProvider with ChangeNotifier {
   /// menggunakan daftar funnel/tag dari cache. Mengembalikan ChatModel baru dengan nama yang diterapkan.
   ChatModel _applyTagAndFunnelMapping(ChatModel chat, Conversation conv) {
     // Funnel: resolve ID → name
-    if ((chat.funnel.isEmpty || int.tryParse(chat.funnel) != null) &&
+    // 1) Prioritaskan optimistic local cache (tidak tertimpa server stale)
+    if (_savedContactFunnels.containsKey(chat.id)) {
+      chat = chat.copyWith(funnel: _savedContactFunnels[chat.id]!);
+    } else if ((chat.funnel.isEmpty || int.tryParse(chat.funnel) != null) &&
         conv.funnelId.isNotEmpty) {
       if (_cachedFunnels != null) {
         final matched = _cachedFunnels!.firstWhere(
@@ -702,7 +711,10 @@ class ChatProvider with ChangeNotifier {
       }
     }
     // Tags: resolve IDs → names
-    if (chat.tags.isEmpty &&
+    // 1) Prioritaskan optimistic local cache (tidak tertimpa server stale)
+    if (_savedContactTags.containsKey(chat.id)) {
+      chat = chat.copyWith(tags: _savedContactTags[chat.id]!);
+    } else if (chat.tags.isEmpty &&
         conv.tagsIds.isNotEmpty &&
         conv.tagsIds != "null") {
       if (_cachedTags != null) {
@@ -723,6 +735,10 @@ class ChatProvider with ChangeNotifier {
           chat = chat.copyWith(tags: tagIdList);
         }
       }
+    }
+    // Notes: prioritaskan optimistic local cache
+    if (_savedContactNotes.containsKey(chat.id)) {
+      chat = chat.copyWith(notes: _savedContactNotes[chat.id]!);
     }
     return chat;
   }
@@ -1076,6 +1092,15 @@ class ChatProvider with ChangeNotifier {
           }
           // Terapkan assigned agent override agar status tidak revert ke Unassigned saat polling/refresh
           chat = _applyAgentOverride(chat);
+
+          // FIX: Terapkan avatar dari persistent cache agar foto profil yang baru diedit
+          // TIDAK PERNAH tertimpa menjadi null/lama saat fetchChats() berjalan di beranda!
+          final persistedAvatar =
+              getCachedAvatarUrl(chat.id) ??
+              (chat.extId.isNotEmpty ? getCachedAvatarUrl(chat.extId) : null);
+          if (persistedAvatar != null && persistedAvatar.isNotEmpty) {
+            chat = chat.copyWith(avatarUrl: persistedAvatar);
+          }
 
           // FIX: Cegah string generik ("File", "Document") menimpa JSON array media yang sudah valid
           final shieldReference = oldChat ?? override;
@@ -2869,6 +2894,30 @@ class ChatProvider with ChangeNotifier {
           debugPrint('ChatProvider: ❌ Error decoding cached avatar URLs: $e');
         }
       }
+
+      // FIX: Injeksi avatar dari cache ke daftar chat saat aplikasi dimulai ulang
+      if (_cachedAvatarUrls.isNotEmpty) {
+        for (int i = 0; i < _chats.length; i++) {
+          final cached =
+              _cachedAvatarUrls[_chats[i].id] ??
+              (_chats[i].extId.isNotEmpty
+                  ? _cachedAvatarUrls[_chats[i].extId]
+                  : null);
+          if (cached != null && cached.isNotEmpty) {
+            _chats[i] = _chats[i].copyWith(avatarUrl: cached);
+          }
+        }
+        for (int i = 0; i < _allMasterChats.length; i++) {
+          final cached =
+              _cachedAvatarUrls[_allMasterChats[i].id] ??
+              (_allMasterChats[i].extId.isNotEmpty
+                  ? _cachedAvatarUrls[_allMasterChats[i].extId]
+                  : null);
+          if (cached != null && cached.isNotEmpty) {
+            _allMasterChats[i] = _allMasterChats[i].copyWith(avatarUrl: cached);
+          }
+        }
+      }
     } catch (e) {
       debugPrint('ChatProvider: ❌ Error loading persisted state: $e');
     }
@@ -3018,6 +3067,28 @@ class ChatProvider with ChangeNotifier {
     return _savedAgentNames[roomId];
   }
 
+  /// Cek apakah agent dengan nama ini sudah ditugaskan ke obrolan terkait
+  bool isAgentAlreadyAssigned(String contactId, String agentName) {
+    final targetName = agentName.toLowerCase().trim();
+    if (targetName.isEmpty) return false;
+
+    // 1. Cek dari persistent saved agent name
+    final saved = _savedAgentNames[contactId]?.toLowerCase().trim();
+    if (saved != null && saved.isNotEmpty && saved == targetName) {
+      return true;
+    }
+
+    // 2. Cek dari daftar obrolan aktif
+    for (final chat in _chats) {
+      if (chat.id == contactId && chat.agentName.isNotEmpty) {
+        if (chat.agentName.toLowerCase().trim() == targetName) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   /// Ambil URL avatar terbaru yang di-cache dari DetailRoom.
   String? getCachedAvatarUrl(String roomId) {
     return _cachedAvatarUrls[roomId];
@@ -3027,8 +3098,23 @@ class ChatProvider with ChangeNotifier {
   Future<void> saveCachedAvatarUrl(String roomId, String avatarUrl) async {
     if (avatarUrl.isEmpty) return;
     _cachedAvatarUrls[roomId] = avatarUrl;
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_cachedAvatarUrlsKey, jsonEncode(_cachedAvatarUrls));
+
+    // Update memori master chats & list chats seketika agar beranda langsung sinkron
+    for (int i = 0; i < _allMasterChats.length; i++) {
+      if (_allMasterChats[i].id == roomId ||
+          _allMasterChats[i].extId == roomId) {
+        _allMasterChats[i] = _allMasterChats[i].copyWith(avatarUrl: avatarUrl);
+      }
+    }
+    for (int i = 0; i < _chats.length; i++) {
+      if (_chats[i].id == roomId || _chats[i].extId == roomId) {
+        _chats[i] = _chats[i].copyWith(avatarUrl: avatarUrl);
+      }
+    }
+    notifyListeners();
   }
 
   // ── Getter Terkomputasi ──
@@ -3956,13 +4042,33 @@ class ChatProvider with ChangeNotifier {
     List<String>? tagNames,
   }) async {
     _detailRoomCache.remove(contactId);
+    final namesToSave = tagNames ?? tagIds;
+
+    // Simpan ke SharedPreferences agar tidak tertimpa fetchChats
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'saved_contact_tags_$contactId',
+        jsonEncode(namesToSave),
+      );
+    } catch (_) {}
+
+    // Optimistic update
+    _savedContactTags[contactId] = namesToSave;
+    final index = _chats.indexWhere((c) => c.id == contactId);
+    if (index != -1) {
+      _chats[index] = _chats[index].copyWith(tags: namesToSave);
+    }
+    final masterIndex = _allMasterChats.indexWhere((c) => c.id == contactId);
+    if (masterIndex != -1) {
+      _allMasterChats[masterIndex] = _allMasterChats[masterIndex].copyWith(
+        tags: namesToSave,
+      );
+    }
+    notifyListeners();
+
     final response = await _chatService.updateContactTags(contactId, tagIds);
     if (!response.isError) {
-      final index = _chats.indexWhere((c) => c.id == contactId);
-      if (index != -1) {
-        _chats[index] = _chats[index].copyWith(tags: tagNames ?? tagIds);
-        notifyListeners();
-      }
       return true;
     }
     _error = response.error;
@@ -3976,11 +4082,26 @@ class ChatProvider with ChangeNotifier {
     List<String> tagNames,
   ) {
     _detailRoomCache.remove(contactId);
+
+    // Simpan ke SharedPreferences agar tidak tertimpa fetchChats
+    try {
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString('saved_contact_tags_$contactId', jsonEncode(tagNames));
+      });
+    } catch (_) {}
+
+    _savedContactTags[contactId] = tagNames;
     final index = _chats.indexWhere((c) => c.id == contactId);
     if (index != -1) {
       _chats[index] = _chats[index].copyWith(tags: tagNames);
-      notifyListeners();
     }
+    final masterIndex = _allMasterChats.indexWhere((c) => c.id == contactId);
+    if (masterIndex != -1) {
+      _allMasterChats[masterIndex] = _allMasterChats[masterIndex].copyWith(
+        tags: tagNames,
+      );
+    }
+    notifyListeners();
   }
 
   Future<bool> updateContactFunnel(
@@ -3989,17 +4110,33 @@ class ChatProvider with ChangeNotifier {
     String? funnelName,
   }) async {
     _detailRoomCache.remove(contactId);
+    final nameToSave = funnelName ?? funnelId;
+
+    // Simpan ke SharedPreferences agar tidak tertimpa fetchChats
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('saved_contact_funnel_$contactId', nameToSave);
+    } catch (_) {}
+
+    // Optimistic update
+    _savedContactFunnels[contactId] = nameToSave;
+    final index = _chats.indexWhere((c) => c.id == contactId);
+    if (index != -1) {
+      _chats[index] = _chats[index].copyWith(funnel: nameToSave);
+    }
+    final masterIndex = _allMasterChats.indexWhere((c) => c.id == contactId);
+    if (masterIndex != -1) {
+      _allMasterChats[masterIndex] = _allMasterChats[masterIndex].copyWith(
+        funnel: nameToSave,
+      );
+    }
+    notifyListeners();
+
     final response = await _chatService.updateContactFunnel(
       contactId,
       funnelId,
     );
     if (!response.isError) {
-      final index = _chats.indexWhere((c) => c.id == contactId);
-      if (index != -1) {
-        // Use the display name if provided, otherwise fallback to the ID string
-        _chats[index] = _chats[index].copyWith(funnel: funnelName ?? funnelId);
-        notifyListeners();
-      }
       return true;
     }
     _error = response.error;
@@ -4009,13 +4146,29 @@ class ChatProvider with ChangeNotifier {
 
   Future<bool> updateContactNotes(String contactId, String notes) async {
     _detailRoomCache.remove(contactId);
+
+    // Simpan ke SharedPreferences agar tidak tertimpa fetchChats
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('saved_contact_notes_$contactId', notes);
+    } catch (_) {}
+
+    // Optimistic update
+    _savedContactNotes[contactId] = notes;
+    final index = _chats.indexWhere((c) => c.id == contactId);
+    if (index != -1) {
+      _chats[index] = _chats[index].copyWith(notes: notes);
+    }
+    final masterIndex = _allMasterChats.indexWhere((c) => c.id == contactId);
+    if (masterIndex != -1) {
+      _allMasterChats[masterIndex] = _allMasterChats[masterIndex].copyWith(
+        notes: notes,
+      );
+    }
+    notifyListeners();
+
     final response = await _chatService.updateContactNotes(contactId, notes);
     if (!response.isError) {
-      final index = _chats.indexWhere((c) => c.id == contactId);
-      if (index != -1) {
-        _chats[index] = _chats[index].copyWith(notes: notes);
-        notifyListeners();
-      }
       return true;
     }
     _error = response.error;
@@ -4130,6 +4283,25 @@ class ChatProvider with ChangeNotifier {
           'ChatProvider: 💾 Optimistically saved contact name "$newName" for room $contactId (synced all matching chats)',
         );
       }
+    }
+
+    // OPTIMISTIC SAVE: simpan avatar ke cache & sync ke semua chat di _chats
+    final newAvatar =
+        contactData['CtImg']?.toString() ?? contactData['Photo']?.toString();
+    if (newAvatar != null && newAvatar.isNotEmpty) {
+      final resolvedAvatar = newAvatar.startsWith('http')
+          ? newAvatar
+          : 'https://id.nobox.ai/upload/${newAvatar.replaceAll('\\', '/')}';
+      await saveCachedAvatarUrl(contactId, resolvedAvatar);
+      for (int i = 0; i < _chats.length; i++) {
+        if (_chats[i].id == contactId || _chats[i].extId == contactId) {
+          _chats[i] = _chats[i].copyWith(avatarUrl: resolvedAvatar);
+        }
+      }
+      notifyListeners();
+      debugPrint(
+        'ChatProvider: 💾 Optimistically saved avatar for room $contactId',
+      );
     }
 
     // OPTIMISTIC SAVE: simpan data lokasi ke disk SEBELUM memanggil API,

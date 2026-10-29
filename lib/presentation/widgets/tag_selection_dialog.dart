@@ -58,7 +58,11 @@ class _TagSelectionDialogState extends State<TagSelectionDialog> {
   }
 
   String _getTagName(Map<String, dynamic> tag) {
-    final raw = tag['Nm']?.toString() ?? tag['Name']?.toString() ?? tag['name']?.toString() ?? 'Unknown';
+    final raw =
+        tag['Nm']?.toString() ??
+        tag['Name']?.toString() ??
+        tag['name']?.toString() ??
+        'Unknown';
     return raw
         .replaceAll(r"\'", "'")
         .replaceAll(r'\"', '"')
@@ -108,18 +112,24 @@ class _TagSelectionDialogState extends State<TagSelectionDialog> {
 
     try {
       // Ensure we are passing Tag IDs to the API, even if initialSelectedTags contained names.
-      final List<String> tagIdsToSave = _selectedTags.map((selectedVal) {
-        final foundByName = _allTags.firstWhere(
-          (tag) => _getTagName(tag) == selectedVal,
-          orElse: () => <String, dynamic>{},
-        );
-        if (foundByName.isNotEmpty) {
-          return _getTagId(foundByName);
-        }
-        return selectedVal;
-      }).toSet().toList();
+      final List<String> tagIdsToSave = _selectedTags
+          .map((selectedVal) {
+            final foundByName = _allTags.firstWhere(
+              (tag) => _getTagName(tag) == selectedVal,
+              orElse: () => <String, dynamic>{},
+            );
+            if (foundByName.isNotEmpty) {
+              return _getTagId(foundByName);
+            }
+            return selectedVal;
+          })
+          .toSet()
+          .toList();
 
-      final response = await _tagService.updateContactTags(widget.roomId, tagIdsToSave);
+      final response = await _tagService.updateContactTags(
+        widget.roomId,
+        tagIdsToSave,
+      );
 
       if (!mounted) return;
 
@@ -137,7 +147,7 @@ class _TagSelectionDialogState extends State<TagSelectionDialog> {
             // Fallback, barangkali itu nama tag baru
             return id;
           }).toList();
-          
+
           widget.onSave!(tagNamesToSave);
         }
         Navigator.pop(context, true);
@@ -185,7 +195,11 @@ class _TagSelectionDialogState extends State<TagSelectionDialog> {
               children: [
                 const Text(
                   'Message Tags',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                  ),
                 ),
                 InkWell(
                   onTap: () => Navigator.pop(context),
@@ -199,21 +213,33 @@ class _TagSelectionDialogState extends State<TagSelectionDialog> {
               style: TextStyle(color: isDark ? Colors.white : Colors.black87),
               decoration: InputDecoration(
                 hintText: 'Search or create new tag...',
-                hintStyle: TextStyle(color: isDark ? Colors.grey.shade500 : Colors.grey.shade400),
-                prefixIcon: Icon(Icons.search, color: isDark ? Colors.grey.shade500 : Colors.grey.shade400),
+                hintStyle: TextStyle(
+                  color: isDark ? Colors.grey.shade500 : Colors.grey.shade400,
+                ),
+                prefixIcon: Icon(
+                  Icons.search,
+                  color: isDark ? Colors.grey.shade500 : Colors.grey.shade400,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: isDark ? Colors.grey.shade700 : Colors.grey.shade300),
+                  borderSide: BorderSide(
+                    color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                  ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: isDark ? Colors.grey.shade700 : Colors.grey.shade300),
+                  borderSide: BorderSide(
+                    color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                  ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: Colors.blue),
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
               ),
               enabled: !_isLoading && !_isSaving,
             ),
@@ -221,21 +247,30 @@ class _TagSelectionDialogState extends State<TagSelectionDialog> {
             if (_selectedTags.isNotEmpty)
               Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.blue.withOpacity(0.15) : Colors.blue.shade50,
+                    color: isDark
+                        ? Colors.blue.withOpacity(0.15)
+                        : Colors.blue.shade50,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     '${_selectedTags.length} tag${_selectedTags.length > 1 ? 's' : ''} selected',
-                    style: TextStyle(color: isDark ? Colors.blue.shade300 : Colors.blue.shade700, fontSize: 12, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      color: isDark
+                          ? Colors.blue.shade300
+                          : Colors.blue.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
             const SizedBox(height: 8),
-            Expanded(
-              child: _buildContent(),
-            ),
+            Expanded(child: _buildContent()),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -244,10 +279,18 @@ class _TagSelectionDialogState extends State<TagSelectionDialog> {
                     onPressed: _isSaving ? null : () => Navigator.pop(context),
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Colors.blue),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    child: const Text('Cancel', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.w600)),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        color: Colors.blue,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -269,10 +312,15 @@ class _TagSelectionDialogState extends State<TagSelectionDialog> {
                             width: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
                             ),
                           )
-                        : Text('Save${_selectedTags.isNotEmpty ? ' (${_selectedTags.length})' : ''}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                        : Text(
+                            'Save${_selectedTags.isNotEmpty ? ' (${_selectedTags.length})' : ''}',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
                   ),
                 ),
               ],
@@ -299,16 +347,47 @@ class _TagSelectionDialogState extends State<TagSelectionDialog> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: _fetchTags,
-              child: const Text('Retry'),
-            ),
+            ElevatedButton(onPressed: _fetchTags, child: const Text('Retry')),
           ],
         ),
       );
     }
 
     if (_filteredTags.isEmpty) {
+      final query = _searchController.text.trim();
+      if (query.isNotEmpty) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'No existing tags match "$query".',
+                style: TextStyle(
+                  color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    if (!_selectedTags.contains(query)) {
+                      _selectedTags.add(query);
+                    }
+                    _searchController.clear();
+                  });
+                },
+                icon: const Icon(Icons.add, size: 18),
+                label: Text('Add "$query" as tag'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
       return const Center(child: Text('No tags found.'));
     }
 
@@ -319,7 +398,8 @@ class _TagSelectionDialogState extends State<TagSelectionDialog> {
         final tagId = _getTagId(tag);
         final tagName = _getTagName(tag);
 
-        final isSelected = _selectedTags.contains(tagId) || _selectedTags.contains(tagName);
+        final isSelected =
+            _selectedTags.contains(tagId) || _selectedTags.contains(tagName);
 
         return InkWell(
           onTap: _isSaving
@@ -344,7 +424,11 @@ class _TagSelectionDialogState extends State<TagSelectionDialog> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: isSelected ? Colors.blue : (Theme.of(context).brightness == Brightness.dark ? Colors.grey.shade600 : Colors.grey.shade400),
+                      color: isSelected
+                          ? Colors.blue
+                          : (Theme.of(context).brightness == Brightness.dark
+                                ? Colors.grey.shade600
+                                : Colors.grey.shade400),
                       width: isSelected ? 7 : 2,
                     ),
                   ),
@@ -359,7 +443,9 @@ class _TagSelectionDialogState extends State<TagSelectionDialog> {
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w500,
-                          color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87,
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Colors.white
+                              : Colors.black87,
                         ),
                       ),
                       const SizedBox(height: 2),

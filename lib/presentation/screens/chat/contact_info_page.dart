@@ -448,8 +448,26 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
               .map((t) => t['Name']?.toString() ?? t['Nm']?.toString() ?? '')
               .where((t) => t.isNotEmpty)
               .toList();
+        } else if (_currentTags.isNotEmpty) {
+          // Pertahankan data lokal jika server mengembalikan kosong
+          // (jangan timpa dengan array kosong)
         } else {
-          _currentTags = [];
+          // Coba muat dari SharedPreferences sebagai fallback terakhir
+          try {
+            SharedPreferences.getInstance().then((prefs) {
+              final savedTagsJson = prefs.getString(
+                'saved_contact_tags_${widget.chat.id}',
+              );
+              if (savedTagsJson != null && savedTagsJson.isNotEmpty) {
+                final savedTags = List<String>.from(jsonDecode(savedTagsJson));
+                if (savedTags.isNotEmpty && mounted) {
+                  setState(() {
+                    _currentTags = savedTags;
+                  });
+                }
+              }
+            });
+          } catch (_) {}
         }
 
         // Update toggles dari Room
@@ -611,6 +629,36 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
             );
           }
         }
+
+        // Notes local override: pastikan note yang sudah dihapus/diedit secara
+        // lokal (termasuk string kosong) tidak tertimpa oleh data server stale.
+        final cachedNotesKey = 'saved_contact_notes_${widget.chat.id}';
+        if (prefs.containsKey(cachedNotesKey)) {
+          final cachedNotes = prefs.getString(cachedNotesKey) ?? '';
+          if (mounted) {
+            setState(() {
+              _currentNotes = cachedNotes;
+            });
+            debugPrint(
+              'ContactInfo: Overrode Notes with local cache: "$_currentNotes"',
+            );
+          }
+        }
+
+        // Funnel local override: pastikan funnel yang baru dipilih tidak
+        // tertimpa oleh data server stale.
+        final cachedFunnelKey = 'saved_contact_funnel_${widget.chat.id}';
+        if (prefs.containsKey(cachedFunnelKey)) {
+          final cachedFunnel = prefs.getString(cachedFunnelKey) ?? '';
+          if (mounted && cachedFunnel.isNotEmpty) {
+            setState(() {
+              _currentFunnel = cachedFunnel;
+            });
+            debugPrint(
+              'ContactInfo: Overrode Funnel with local cache: $_currentFunnel',
+            );
+          }
+        }
       } catch (e) {
         debugPrint('Failed to load local deal cache: $e');
       }
@@ -735,6 +783,14 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
               setState(() {
                 _currentFunnel = funnelName;
               });
+              Provider.of<ChatProvider>(
+                context,
+                listen: false,
+              ).updateContactFunnel(
+                widget.chat.id,
+                funnelId,
+                funnelName: funnelName,
+              );
             }
           },
         );
@@ -1170,6 +1226,7 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
       text: _currentNotes,
     );
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hasExistingNote = _currentNotes.isNotEmpty;
 
     showDialog(
       context: context,
@@ -1185,17 +1242,39 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
           title: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Add Note',
-                style: TextStyle(
+              Text(
+                hasExistingNote ? 'Edit Note' : 'Add Note',
+                style: const TextStyle(
                   color: Colors.blue,
                   fontWeight: FontWeight.w600,
                   fontSize: 18,
                 ),
               ),
-              InkWell(
-                onTap: () => Navigator.pop(context),
-                child: const Icon(Icons.close, color: Colors.blue, size: 24),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (hasExistingNote)
+                    InkWell(
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showDeleteNoteConfirmation();
+                      },
+                      child: const Icon(
+                        Icons.delete_outline,
+                        color: Colors.red,
+                        size: 24,
+                      ),
+                    ),
+                  const SizedBox(width: 12),
+                  InkWell(
+                    onTap: () => Navigator.pop(context),
+                    child: const Icon(
+                      Icons.close,
+                      color: Colors.blue,
+                      size: 24,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -1271,7 +1350,9 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                       } else {
                         if (mounted)
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to save notes')),
+                            const SnackBar(
+                              content: Text('Failed to save notes'),
+                            ),
                           );
                       }
                       if (mounted) Navigator.pop(context);
@@ -1290,6 +1371,57 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
           ],
         );
       },
+    );
+  }
+
+  void _showDeleteNoteConfirmation() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF1F2C34) : Colors.white,
+        title: Text(
+          'Delete Note',
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to delete this note?',
+          style: TextStyle(color: isDark ? Colors.white70 : Colors.black87),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              final chatProvider = Provider.of<ChatProvider>(
+                context,
+                listen: false,
+              );
+              final success = await chatProvider.updateContactNotes(
+                widget.chat.id,
+                '',
+              );
+              if (success && mounted) {
+                setState(() => _currentNotes = '');
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Note deleted successfully')),
+                );
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2552,6 +2684,15 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                                     updatedLoc['City'] ?? _contactCity;
                               }
 
+                              // 3. UPDATE AVATAR DARI CACHE LOKAL:
+                              final cachedAvatar = provider.getCachedAvatarUrl(
+                                widget.chat.id,
+                              );
+                              if (cachedAvatar != null &&
+                                  cachedAvatar.isNotEmpty) {
+                                _currentAvatarUrl = cachedAvatar;
+                              }
+
                               setState(() {}); // Trigger render ulang seketika!
 
                               // Tarik data background tanpa menghapus data lokal
@@ -3020,17 +3161,42 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                     ),
                   ),
                   if (_currentNotes.isNotEmpty)
-                    InkWell(
-                      onTap: _showEditNoteDialog,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                        child: Text(
-                          _currentNotes,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: isDark ? Colors.white : Colors.black87,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: _showEditNoteDialog,
+                              child: Text(
+                                _currentNotes,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          InkWell(
+                            onTap: _showEditNoteDialog,
+                            child: const Icon(
+                              Icons.edit_outlined,
+                              size: 20,
+                              color: Colors.blue,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          InkWell(
+                            onTap: _showDeleteNoteConfirmation,
+                            child: const Icon(
+                              Icons.delete_outline,
+                              size: 20,
+                              color: Colors.red,
+                            ),
+                          ),
+                        ],
                       ),
                     )
                   else
@@ -3935,33 +4101,137 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                           agent['UserId']?.toString() ??
                           agent['Id']?.toString() ??
                           '';
+                      final agentEmail =
+                          agent['Email']?.toString() ??
+                          agent['Username']?.toString() ??
+                          '';
+
+                      // DETEKSI APAKAH AGENT INI SUDAH DITUGASKAN DI PERCAKAPAN INI
+                      final bool isAlreadyAssigned =
+                          _currentAgentName.isNotEmpty &&
+                          (_currentAgentName.toLowerCase().trim() ==
+                                  agentName.toLowerCase().trim() ||
+                              (_agentEmail.isNotEmpty &&
+                                  _agentEmail.toLowerCase().trim() ==
+                                      agentEmail.toLowerCase().trim()));
 
                       return ListTile(
                         leading: CircleAvatar(
                           radius: 16,
-                          backgroundColor: Colors.blue.shade100,
-                          child: const Icon(
-                            Icons.person,
+                          backgroundColor: isAlreadyAssigned
+                              ? Colors.green.shade100
+                              : Colors.blue.shade100,
+                          child: Icon(
+                            isAlreadyAssigned ? Icons.check : Icons.person,
                             size: 18,
-                            color: Colors.blue,
+                            color: isAlreadyAssigned
+                                ? Colors.green.shade700
+                                : Colors.blue,
                           ),
                         ),
-                        title: Text(
-                          agentName,
-                          style: TextStyle(
-                            color: isDark ? Colors.white : Colors.black87,
-                            fontSize: 14,
-                          ),
+                        title: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                agentName,
+                                style: TextStyle(
+                                  color: isDark ? Colors.white : Colors.black87,
+                                  fontSize: 14,
+                                  fontWeight: isAlreadyAssigned
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                            if (isAlreadyAssigned)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? Colors.green.shade900.withOpacity(0.4)
+                                      : Colors.green.shade50,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: Colors.green.shade400,
+                                    width: 0.8,
+                                  ),
+                                ),
+                                child: Text(
+                                  'Aktif',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isDark
+                                        ? Colors.green.shade300
+                                        : Colors.green.shade800,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                        subtitle: Text(
-                          agent['Username']?.toString() ?? '',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
+                        subtitle: agentEmail.isNotEmpty
+                            ? Text(
+                                agentEmail,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade500,
+                                ),
+                              )
+                            : null,
                         onTap: () async {
                           Navigator.pop(context);
+
+                          // JIKA AGENT SUDAH ADA DI PERCAKAPAN: TAMPILKAN PESAN SESUAI PERMINTAAN QA
+                          if (isAlreadyAssigned) {
+                            ScaffoldMessenger.of(
+                              this.context,
+                            ).hideCurrentSnackBar();
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              SnackBar(
+                                content: const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        'Human agent sudah ada di percakapan tsb',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                backgroundColor: const Color(0xFFE65100),
+                                behavior: SnackBarBehavior.floating,
+                                margin: const EdgeInsets.only(
+                                  bottom: 40,
+                                  left: 20,
+                                  right: 20,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 6,
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                            return; // Jangan lanjutkan panggil API assignAgent
+                          }
+
+                          // JIKA AGENT BELUM ADA: Lakukan assign seperti biasa
+                          ScaffoldMessenger.of(
+                            this.context,
+                          ).hideCurrentSnackBar();
                           ScaffoldMessenger.of(this.context).showSnackBar(
                             SnackBar(
                               content: Text('Assigning to $agentName...'),
@@ -3977,12 +4247,12 @@ class _ContactInfoPageState extends State<ContactInfoPage> {
                             if (mounted) {
                               setState(() {
                                 _currentAgentName = agentName;
-                                _agentEmail =
-                                    agent['Email']?.toString() ??
-                                    agent['Username']?.toString() ??
-                                    '';
+                                _agentEmail = agentEmail;
                               });
                             }
+                            ScaffoldMessenger.of(
+                              this.context,
+                            ).hideCurrentSnackBar();
                             ScaffoldMessenger.of(this.context).showSnackBar(
                               SnackBar(
                                 content: Row(

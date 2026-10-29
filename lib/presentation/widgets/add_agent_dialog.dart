@@ -75,20 +75,58 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
 
   void _assignAgent(Map<String, dynamic> agent) async {
     final name =
-        agent['Name'] ??
-        agent['FullName'] ??
-        agent['DisplayName'] ??
-        'Unknown Agent';
+        (agent['Name'] ??
+                agent['FullName'] ??
+                agent['DisplayName'] ??
+                'Unknown Agent')
+            .toString()
+            .trim();
     final id = agent['Id']?.toString() ?? agent['UserId']?.toString() ?? '';
 
-    // Show loading
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+    // 1. DETEKSI APAKAH AGENT INI SUDAH ADA DI PERCAKAPAN
+    if (chatProvider.isAgentAlreadyAssigned(widget.chatId, name)) {
+      Navigator.pop(context); // Tutup dialog AddAgentDialog
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.white, size: 20),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Human agent sudah ada di percakapan tsb',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFFE65100), // Oranye peringatan
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(bottom: 40, left: 20, right: 20),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 6,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return; // STOP: Jangan panggil API assignAgent!
+    }
+
+    // 2. JIKA BELUM ADA, LANJUTKAN PROSES SEPERTI BIASA:
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
     final success = await chatProvider.assignAgent(
       widget.chatId,
       id,
@@ -104,7 +142,9 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
       Navigator.pop(context);
 
       String errorMessage = chatProvider.error ?? "Gagal memproses ke server";
-      if (errorMessage.contains('500') || errorMessage.contains('503') || errorMessage.contains('validateStatus')) {
+      if (errorMessage.contains('500') ||
+          errorMessage.contains('503') ||
+          errorMessage.contains('validateStatus')) {
         errorMessage = "Terjadi gangguan sementara pada server NoBox";
       }
       ScaffoldMessenger.of(context).showSnackBar(
@@ -123,6 +163,7 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
     return Dialog(
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
@@ -237,6 +278,9 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
                               ? name[0].toUpperCase()
                               : '?';
 
+                          final isAlreadyAssigned = chatProvider
+                              .isAgentAlreadyAssigned(widget.chatId, name);
+
                           return InkWell(
                             onTap: () => _assignAgent(agent),
                             child: Padding(
@@ -264,14 +308,45 @@ class _AddAgentDialogState extends State<AddAgentDialog> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        Text(
-                                          name,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 16,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                        Row(
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                name,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 16,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            if (isAlreadyAssigned) ...[
+                                              const SizedBox(width: 6),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(
+                                                    0xFFE65100,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                child: const Text(
+                                                  'Aktif',
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
                                         ),
                                         if (email.isNotEmpty) ...[
                                           const SizedBox(height: 4),
